@@ -1,0 +1,7 @@
+[package]
+name = "cbor-data"
+version = "0.1.0"
+authors = ["Roland Kuhn <rk@rkuhn.info>"]
+edition = "2018"
+
+[dependencies]
