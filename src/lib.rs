@@ -160,7 +160,10 @@ impl<'a> Cbor<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::constants::*;
+    use crate::{
+        builder::{WriteToArray, WriteToDict},
+        constants::*,
+    };
 
     #[test]
     fn roundtrip_simple() {
@@ -217,6 +220,27 @@ mod tests {
             complex.index(""),
             Some(Tagged(TAG_FRACTION, Composite(value)))
         );
+        assert_eq!(complex.index("a"), None);
+        assert_eq!(complex.index("0"), Some(Plain(Pos(5))));
+        assert_eq!(complex.index("1"), Some(Plain(Composite(the_dict))));
+        assert_eq!(complex.index("1.a"), Some(Plain(Neg(666))));
+        assert_eq!(complex.index("1.b"), Some(Plain(Bytes(b"defdef"))));
+        assert_eq!(complex.index("2"), Some(Plain(Composite(the_array))));
+        assert_eq!(complex.index("2.0"), Some(Plain(Bool(false))));
+        assert_eq!(complex.index("2.1"), Some(Plain(Str("hello"))));
+        assert_eq!(complex.index("3"), Some(Tagged(12345, Null)));
+    }
+
+    #[test]
+    fn canonical() {
+        let bytes = vec![
+            0xc4u8, 0x84, 5, 0xa2, 0x61, b'a', 0x39, 2, 154, 0x61, b'b', 0x46, b'd', b'e', b'f',
+            b'd', b'e', b'f', 0x82, 0xf4, 0x65, b'h', b'e', b'l', b'l', b'o', 0xd9, 48, 57, 0xf6,
+        ];
+        let complex = Cbor::canonical(&*bytes).unwrap();
+        let the_dict = Cbor::canonical(&bytes[3..18]).unwrap();
+        let the_array = Cbor::canonical(&bytes[18..26]).unwrap();
+
         assert_eq!(complex.index("a"), None);
         assert_eq!(complex.index("0"), Some(Plain(Pos(5))));
         assert_eq!(complex.index("1"), Some(Plain(Composite(the_dict))));
