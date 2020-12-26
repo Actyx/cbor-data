@@ -22,12 +22,36 @@ macro_rules! check {
     };
 }
 
+/// Low-level representation of major type 7 values.
+///
+/// Bool, null, and undefined are represented by L0 while L2–L4 represent the underlying
+/// bytes of floating-point numbers (16-, 32-, and 64-bit IEE754).
+pub enum Literal {
+    L0(u8),
+    L1(u8),
+    L2(u16),
+    L4(u32),
+    L8(u64),
+}
+
 pub fn careful_major(bytes: &[u8]) -> Option<u8> {
     Some(*bytes.get(0)? >> 5)
 }
 
 pub fn major(bytes: &[u8]) -> u8 {
     bytes[0] >> 5
+}
+
+pub fn careful_literal(bytes: &[u8]) -> Option<(Literal, &[u8])> {
+    let (int, rest) = careful_integer(bytes)?;
+    match bytes[0] & 31 {
+        24 => Some((Literal::L1(int as u8), rest)),
+        25 => Some((Literal::L2(int as u16), rest)),
+        26 => Some((Literal::L4(int as u32), rest)),
+        27 => Some((Literal::L8(int as u64), rest)),
+        x if x < 24 => Some((Literal::L0(x), rest)),
+        _ => None,
+    }
 }
 
 pub fn careful_integer(bytes: &[u8]) -> Option<(u64, &[u8])> {
@@ -335,7 +359,7 @@ pub fn ptr<'b>(mut bytes: &[u8], mut path: impl Iterator<Item = &'b str>) -> Opt
     }
 }
 
-pub fn canonicalise(bytes: &[u8], builder: CborBuilder) -> Option<Cbor<'static>> {
+pub fn canonicalise(bytes: &[u8], builder: CborBuilder<'_>) -> Option<Cbor<'static>> {
     let (tag, bytes) = careful_tag(bytes)?;
     match major(bytes) {
         MAJOR_POS => Some(builder.write_pos(careful_integer(bytes)?.0, tag)),
@@ -358,7 +382,7 @@ pub fn canonicalise(bytes: &[u8], builder: CborBuilder) -> Option<Cbor<'static>>
             canonicalise_dict(bytes, &mut builder)?;
             Some(builder.finish())
         }
-        MAJOR_LIT => Some(builder.write_lit(careful_integer(bytes)?.0, tag)),
+        MAJOR_LIT => Some(builder.write_lit(careful_literal(bytes)?.0, tag)),
         _ => None,
     }
 }
@@ -400,7 +424,7 @@ fn canonicalise_array<'a>(bytes: &'a [u8], builder: &mut dyn WriteToArray) -> Op
                 });
                 *bytes = res?;
             }
-            MAJOR_LIT => builder.write_lit(update(bytes, careful_integer(b))?, tag),
+            MAJOR_LIT => builder.write_lit(update(bytes, careful_literal(b))?, tag),
             _ => return None,
         }
         Some(())
@@ -457,7 +481,7 @@ fn canonicalise_dict<'a>(bytes: &'a [u8], builder: &mut dyn WriteToDict) -> Opti
                 });
                 *bytes = res?;
             }
-            MAJOR_LIT => builder.write_lit(key, update(bytes, careful_integer(b))?, tag),
+            MAJOR_LIT => builder.write_lit(key, update(bytes, careful_literal(b))?, tag),
             _ => return None,
         }
         Some(())
@@ -527,11 +551,20 @@ mod tests {
         ];
 
         for (res, bytes) in cases {
-            let cbor = Cbor::new(&*bytes);
+            let cbor = Cbor::trusting(&*bytes);
             assert_eq!(cbor.value(), Some(Plain(StrOwned(res.to_owned()))));
 
-            let cbor = Cbor::canonical(bytes).unwrap();
+            let cbor = Cbor::canonical(bytes, None).unwrap();
             assert_eq!(cbor.value(), Some(Plain(Str(res))));
         }
+    }
+
+    #[test]
+    fn float() {
+        let bytes = vec![0xfau8, 0, 0, 51, 17];
+        let cbor = Cbor::trusting(&*bytes);
+        assert_eq!(cbor.value(), Some(Plain(Float(1.8319174824118334e-41))));
+        let cbor = Cbor::canonical(bytes, None).unwrap();
+        assert_eq!(cbor.value(), Some(Plain(Float(1.8319174824118334e-41))));
     }
 }
