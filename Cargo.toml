@@ -3,6 +3,8 @@ name = "cbor-data"
 version = "0.1.0"
 authors = ["Roland Kuhn <rk@rkuhn.info>"]
 edition = "2018"
+description = "A library for using CBOR as in-memory representation for working with dynamically shaped data"
+license = "MIT OR Apache-2.0"
 
 [dev-dependencies]
 serde = "1"
