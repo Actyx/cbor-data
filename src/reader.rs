@@ -34,16 +34,12 @@ pub enum Literal {
     L8(u64),
 }
 
-pub fn careful_major(bytes: &[u8]) -> Option<u8> {
+pub fn major(bytes: &[u8]) -> Option<u8> {
     Some(*bytes.get(0)? >> 5)
 }
 
-pub fn major(bytes: &[u8]) -> u8 {
-    bytes[0] >> 5
-}
-
 pub fn careful_literal(bytes: &[u8]) -> Option<(Literal, &[u8])> {
-    let (int, rest) = careful_integer(bytes)?;
+    let (int, rest) = integer(bytes)?;
     match bytes[0] & 31 {
         24 => Some((Literal::L1(int as u8), rest)),
         25 => Some((Literal::L2(int as u16), rest)),
@@ -54,8 +50,10 @@ pub fn careful_literal(bytes: &[u8]) -> Option<(Literal, &[u8])> {
     }
 }
 
-pub fn careful_integer(bytes: &[u8]) -> Option<(u64, &[u8])> {
+pub fn integer(bytes: &[u8]) -> Option<(u64, &[u8])> {
     match bytes[0] & 31 {
+        // fun fact: explicit bounds checks make the code a lot smaller and faster because
+        // otherwise the panic’s line number dictates a separate check for each array access
         24 => check!(bytes.len() > 1, Some((bytes[1] as u64, &bytes[2..]))),
         25 => check!(
             bytes.len() > 2,
@@ -64,6 +62,7 @@ pub fn careful_integer(bytes: &[u8]) -> Option<(u64, &[u8])> {
         26 => check!(
             bytes.len() > 4,
             Some((
+                // fun fact: these expressions compile down to mov-shl-bswap
                 ((bytes[1] as u64) << 24)
                     | ((bytes[2] as u64) << 16)
                     | ((bytes[3] as u64) << 8)
@@ -90,33 +89,6 @@ pub fn careful_integer(bytes: &[u8]) -> Option<(u64, &[u8])> {
     }
 }
 
-pub fn integer(bytes: &[u8]) -> Option<(u64, &[u8])> {
-    match bytes[0] & 31 {
-        24 => Some((bytes[1] as u64, &bytes[2..])),
-        25 => Some((((bytes[1] as u64) << 8) | (bytes[2] as u64), &bytes[3..])),
-        26 => Some((
-            ((bytes[1] as u64) << 24)
-                | ((bytes[2] as u64) << 16)
-                | ((bytes[3] as u64) << 8)
-                | (bytes[4] as u64),
-            &bytes[5..],
-        )),
-        27 => Some((
-            ((bytes[1] as u64) << 56)
-                | ((bytes[2] as u64) << 48)
-                | ((bytes[3] as u64) << 40)
-                | ((bytes[4] as u64) << 32)
-                | ((bytes[5] as u64) << 24)
-                | ((bytes[6] as u64) << 16)
-                | ((bytes[7] as u64) << 8)
-                | (bytes[8] as u64),
-            &bytes[9..],
-        )),
-        x if x < 24 => Some(((x as u64), &bytes[1..])),
-        _ => None,
-    }
-}
-
 fn indefinite(bytes: &[u8]) -> Option<(u64, &[u8])> {
     if bytes[0] & 31 == INDEFINITE_SIZE {
         Some((u64::MAX, &bytes[1..]))
@@ -126,43 +98,16 @@ fn indefinite(bytes: &[u8]) -> Option<(u64, &[u8])> {
 }
 
 fn value_bytes(bytes: &[u8], skip: bool) -> Option<(Cow<[u8]>, &[u8])> {
-    let m = major(bytes);
+    let m = major(bytes)?;
     let (len, mut rest) = integer(bytes).or_else(|| indefinite(bytes))?;
     if len == u64::MAX {
         // marker for indefinite size
         let mut b = Vec::new();
-        while rest[0] != STOP_BYTE {
-            if major(rest) != m {
+        while *rest.get(0)? != STOP_BYTE {
+            if major(rest)? != m {
                 return None;
             }
             let (len, r) = integer(rest)?;
-            if len == u64::MAX {
-                return None;
-            }
-            let len = len as usize;
-            if !skip {
-                b.extend_from_slice(&r[..len]);
-            }
-            rest = &r[len..];
-        }
-        Some((Cow::Owned(b), rest))
-    } else {
-        let len = len as usize;
-        Some((Cow::Borrowed(&rest[..len]), &rest[len..]))
-    }
-}
-
-fn careful_value_bytes(bytes: &[u8], skip: bool) -> Option<(Cow<[u8]>, &[u8])> {
-    let m = major(bytes);
-    let (len, mut rest) = careful_integer(bytes).or_else(|| indefinite(bytes))?;
-    if len == u64::MAX {
-        // marker for indefinite size
-        let mut b = Vec::new();
-        while *rest.get(0)? != STOP_BYTE {
-            if major(rest) != m {
-                return None;
-            }
-            let (len, r) = careful_integer(rest)?;
             if len == u64::MAX || len as usize > r.len() {
                 return None;
             }
@@ -184,6 +129,7 @@ fn careful_value_bytes(bytes: &[u8], skip: bool) -> Option<(Cow<[u8]>, &[u8])> {
 
 fn float(bytes: &[u8]) -> Option<(f64, &[u8])> {
     integer(bytes).and_then(|(x, rest)| match bytes.len() - rest.len() {
+        3 => Some((half::f16::from_bits(x as u16).to_f64(), rest)),
         5 => Some((f32::from_bits(x as u32) as f64, rest)),
         9 => Some((f64::from_bits(x), rest)),
         _ => None,
@@ -200,7 +146,7 @@ fn string(bytes: &[u8]) -> Option<(Cow<str>, &[u8])> {
 }
 
 fn skip(bytes: &[u8]) -> Option<&[u8]> {
-    match major(bytes) {
+    match major(bytes)? {
         MAJOR_POS | MAJOR_NEG | MAJOR_LIT => integer(bytes).map(|x| x.1),
         MAJOR_STR | MAJOR_BYTES => value_bytes(bytes, true).map(|x| x.1),
         MAJOR_TAG => skip(integer(bytes)?.1),
@@ -240,28 +186,18 @@ fn skip(bytes: &[u8]) -> Option<&[u8]> {
     }
 }
 
-fn careful_tag(mut bytes: &[u8]) -> Option<(Option<u64>, &[u8])> {
+fn tag(mut bytes: &[u8]) -> Option<(Option<u64>, &[u8])> {
     let mut tag = None;
-    while careful_major(bytes)? == MAJOR_TAG {
-        let (v, r) = careful_integer(bytes)?;
+    while major(bytes)? == MAJOR_TAG {
+        let (v, r) = integer(bytes)?;
         tag = Some(v);
         bytes = r;
     }
     Some((tag, bytes))
 }
 
-fn tag(mut bytes: &[u8]) -> (Option<u64>, &[u8]) {
-    let mut tag = None;
-    while major(bytes) == MAJOR_TAG {
-        let (v, r) = integer(bytes).unwrap();
-        tag = Some(v);
-        bytes = r;
-    }
-    (tag, bytes)
-}
-
 fn value(bytes: &[u8]) -> Option<CborValue> {
-    match major(bytes) {
+    match major(bytes)? {
         MAJOR_POS => Some(Pos(integer(bytes)?.0)),
         MAJOR_NEG => Some(Neg(integer(bytes)?.0)),
         MAJOR_BYTES => match value_bytes(bytes, false)? {
@@ -292,7 +228,7 @@ fn value(bytes: &[u8]) -> Option<CborValue> {
 }
 
 pub fn tagged_value(bytes: &[u8]) -> Option<TaggedValue> {
-    value(bytes).map(|v| match tag(bytes).0 {
+    value(bytes).map(|v| match tag(bytes).unwrap().0 {
         Some(tag) => v.with_tag(tag),
         None => v.without_tag(),
     })
@@ -301,10 +237,10 @@ pub fn tagged_value(bytes: &[u8]) -> Option<TaggedValue> {
 pub fn ptr<'b>(mut bytes: &[u8], mut path: impl Iterator<Item = &'b str>) -> Option<TaggedValue> {
     match path.next() {
         Some(p) => {
-            while major(bytes) == MAJOR_TAG {
+            while major(bytes)? == MAJOR_TAG {
                 bytes = integer(bytes)?.1;
             }
-            match major(bytes) {
+            match major(bytes)? {
                 MAJOR_ARRAY => {
                     let mut idx = u64::from_str(p).ok()?;
                     let (len, mut rest) = integer(bytes).or_else(|| indefinite(bytes))?;
@@ -360,15 +296,13 @@ pub fn ptr<'b>(mut bytes: &[u8], mut path: impl Iterator<Item = &'b str>) -> Opt
 }
 
 pub fn canonicalise(bytes: &[u8], builder: CborBuilder<'_>) -> Option<Cbor<'static>> {
-    let (tag, bytes) = careful_tag(bytes)?;
-    match major(bytes) {
-        MAJOR_POS => Some(builder.write_pos(careful_integer(bytes)?.0, tag)),
-        MAJOR_NEG => Some(builder.write_neg(careful_integer(bytes)?.0, tag)),
-        MAJOR_BYTES => {
-            Some(builder.write_bytes(careful_value_bytes(bytes, false)?.0.as_ref(), tag))
-        }
+    let (tag, bytes) = tag(bytes)?;
+    match major(bytes)? {
+        MAJOR_POS => Some(builder.write_pos(integer(bytes)?.0, tag)),
+        MAJOR_NEG => Some(builder.write_neg(integer(bytes)?.0, tag)),
+        MAJOR_BYTES => Some(builder.write_bytes(value_bytes(bytes, false)?.0.as_ref(), tag)),
         MAJOR_STR => Some(builder.write_str(
-            std::str::from_utf8(careful_value_bytes(bytes, false)?.0.as_ref()).ok()?,
+            std::str::from_utf8(value_bytes(bytes, false)?.0.as_ref()).ok()?,
             tag,
         )),
         // TODO keep definite size arrays definite size if len < 24
@@ -399,15 +333,13 @@ fn update<'a, T>(b: &mut &'a [u8], val: Option<(T, &'a [u8])>) -> Option<T> {
 
 fn canonicalise_array<'a>(bytes: &'a [u8], builder: &mut dyn WriteToArray) -> Option<&'a [u8]> {
     fn one(bytes: &mut &[u8], builder: &mut dyn WriteToArray) -> Option<()> {
-        let (tag, b) = careful_tag(bytes)?;
-        match major(b) {
-            MAJOR_POS => builder.write_pos(update(bytes, careful_integer(b))?, tag),
-            MAJOR_NEG => builder.write_neg(update(bytes, careful_integer(b))?, tag),
-            MAJOR_BYTES => {
-                builder.write_bytes(update(bytes, careful_value_bytes(b, false))?.as_ref(), tag)
-            }
+        let (tag, b) = tag(bytes)?;
+        match major(b)? {
+            MAJOR_POS => builder.write_pos(update(bytes, integer(b))?, tag),
+            MAJOR_NEG => builder.write_neg(update(bytes, integer(b))?, tag),
+            MAJOR_BYTES => builder.write_bytes(update(bytes, value_bytes(b, false))?.as_ref(), tag),
             MAJOR_STR => builder.write_str(
-                std::str::from_utf8(update(bytes, careful_value_bytes(b, false))?.as_ref()).ok()?,
+                std::str::from_utf8(update(bytes, value_bytes(b, false))?.as_ref()).ok()?,
                 tag,
             ),
             MAJOR_ARRAY => {
@@ -431,7 +363,7 @@ fn canonicalise_array<'a>(bytes: &'a [u8], builder: &mut dyn WriteToArray) -> Op
     }
 
     // at this point the first byte (indefinite array) has already been written
-    let (len, mut bytes) = careful_integer(bytes).or_else(|| indefinite(bytes))?;
+    let (len, mut bytes) = integer(bytes).or_else(|| indefinite(bytes))?;
     if len == u64::MAX {
         // marker for indefinite size
         while *bytes.get(0)? != STOP_BYTE {
@@ -448,23 +380,21 @@ fn canonicalise_array<'a>(bytes: &'a [u8], builder: &mut dyn WriteToArray) -> Op
 
 fn canonicalise_dict<'a>(bytes: &'a [u8], builder: &mut dyn WriteToDict) -> Option<&'a [u8]> {
     fn one(bytes: &mut &[u8], builder: &mut dyn WriteToDict) -> Option<()> {
-        if major(bytes) != MAJOR_STR {
+        if major(bytes)? != MAJOR_STR {
             return None;
         }
-        let (key, b) = careful_value_bytes(bytes, false)?;
+        let (key, b) = value_bytes(bytes, false)?;
         let key = std::str::from_utf8(key.as_ref()).ok()?;
-        let (tag, b) = careful_tag(b)?;
-        match major(b) {
-            MAJOR_POS => builder.write_pos(key, update(bytes, careful_integer(b))?, tag),
-            MAJOR_NEG => builder.write_neg(key, update(bytes, careful_integer(b))?, tag),
-            MAJOR_BYTES => builder.write_bytes(
-                key,
-                update(bytes, careful_value_bytes(b, false))?.as_ref(),
-                tag,
-            ),
+        let (tag, b) = tag(b)?;
+        match major(b)? {
+            MAJOR_POS => builder.write_pos(key, update(bytes, integer(b))?, tag),
+            MAJOR_NEG => builder.write_neg(key, update(bytes, integer(b))?, tag),
+            MAJOR_BYTES => {
+                builder.write_bytes(key, update(bytes, value_bytes(b, false))?.as_ref(), tag)
+            }
             MAJOR_STR => builder.write_str(
                 key,
-                std::str::from_utf8(update(bytes, careful_value_bytes(b, false))?.as_ref()).ok()?,
+                std::str::from_utf8(update(bytes, value_bytes(b, false))?.as_ref()).ok()?,
                 tag,
             ),
             MAJOR_ARRAY => {
@@ -488,7 +418,7 @@ fn canonicalise_dict<'a>(bytes: &'a [u8], builder: &mut dyn WriteToDict) -> Opti
     }
 
     // at this point the first byte (indefinite array) has already been written
-    let (len, mut bytes) = careful_integer(bytes).or_else(|| indefinite(bytes))?;
+    let (len, mut bytes) = integer(bytes).or_else(|| indefinite(bytes))?;
     if len == u64::MAX {
         // marker for indefinite size
         while *bytes.get(0)? != STOP_BYTE {

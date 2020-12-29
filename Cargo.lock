@@ -4,6 +4,7 @@
 name = "cbor-data"
 version = "0.1.0"
 dependencies = [
+ "half",
  "serde",
  "serde_cbor",
  "serde_json",

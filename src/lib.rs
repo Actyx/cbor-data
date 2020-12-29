@@ -195,26 +195,26 @@ impl<'a> Cbor<'a> {
     /// Returns false also in case of data format problems.
     pub fn is_array(&self) -> bool {
         let mut bytes = self.as_slice();
-        while major(bytes) == MAJOR_TAG {
+        while major(bytes) == Some(MAJOR_TAG) {
             bytes = match integer(bytes) {
                 Some((_, r)) => r,
                 None => return false,
             };
         }
-        major(bytes) == MAJOR_ARRAY
+        major(bytes) == Some(MAJOR_ARRAY)
     }
 
     /// Check if this CBOR contains an dict as its top-level item.
     /// Returns false also in case of data format problems.
     pub fn is_dict(&self) -> bool {
         let mut bytes = self.as_slice();
-        while major(bytes) == MAJOR_TAG {
+        while major(bytes) == Some(MAJOR_TAG) {
             bytes = match integer(bytes) {
                 Some((_, r)) => r,
                 None => return false,
             };
         }
-        major(bytes) == MAJOR_DICT
+        major(bytes) == Some(MAJOR_DICT)
     }
 
     fn borrow(bytes: &'a [u8]) -> Self {
