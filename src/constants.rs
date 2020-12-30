@@ -9,14 +9,19 @@ pub const MAJOR_DICT: u8 = 5;
 pub const MAJOR_TAG: u8 = 6;
 pub const MAJOR_LIT: u8 = 7;
 
-pub const TAG_ISO8601: u64 = 0;
-pub const TAG_EPOCH: u64 = 1;
-pub const TAG_BIGNUM_POS: u64 = 2;
-pub const TAG_BIGNUM_NEG: u64 = 3;
-pub const TAG_FRACTION: u64 = 4;
-pub const TAG_BIGFLOAT: u64 = 5;
-pub const TAG_CBOR_ITEM: u64 = 24;
-pub const TAG_CBOR_MARKER: u64 = 55799;
+pub const TAG_ISO8601: u64 = 0; // on string
+pub const TAG_EPOCH: u64 = 1; // on non-big integer or float
+pub const TAG_BIGNUM_POS: u64 = 2; // on byte string (big endian)
+pub const TAG_BIGNUM_NEG: u64 = 3; // on byte string (big endian)
+pub const TAG_BIGDECIMAL: u64 = 4; // on array of [exponent, mantissa]
+pub const TAG_BIGFLOAT: u64 = 5; // on array of [exponent, mantissa]
+pub const TAG_CBOR_ITEM: u64 = 24; // on byte string that contains CBOR
+pub const TAG_URI: u64 = 32; // on string; see https://tools.ietf.org/html/rfc3986
+pub const TAG_BASE64URL: u64 = 33; // on string
+pub const TAG_BASE64: u64 = 34; // on string
+pub const TAG_REGEX: u64 = 35; // on string
+pub const TAG_MIME: u64 = 36; // on string; see https://tools.ietf.org/html/rfc2045
+pub const TAG_CBOR_MARKER: u64 = 55799; // on anything; used only as magic number at beginning of file
 
 pub const LIT_FALSE: u8 = 20;
 pub const LIT_TRUE: u8 = 21;

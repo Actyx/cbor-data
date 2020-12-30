@@ -1,4 +1,4 @@
-use crate::{constants::*, reader::Literal, Cbor};
+use crate::{constants::*, reader::Literal, CborOwned};
 
 enum Bytes<'a> {
     Owned(Vec<u8>),
@@ -48,8 +48,8 @@ pub struct ArrayBuilder<'a, T>(Bytes<'a>, Box<dyn FnOnce(Bytes<'a>) -> T + 'a>);
 /// limit while instantiating your recursive function).
 pub struct DictBuilder<'a, T>(Bytes<'a>, Box<dyn FnOnce(Bytes<'a>) -> T + 'a>);
 
-fn finish_cbor(v: Bytes<'_>) -> Cbor<'static> {
-    Cbor::trusting(v.as_slice())
+fn finish_cbor(v: Bytes<'_>) -> CborOwned {
+    CborOwned::trusting(v.as_slice())
 }
 
 impl Default for CborBuilder<'static> {
@@ -74,60 +74,60 @@ impl<'a> CborBuilder<'a> {
     }
 
     /// Write a unsigned value of up to 64 bits.
-    pub fn write_pos(mut self, value: u64, tag: Option<u64>) -> Cbor<'static> {
+    pub fn write_pos(mut self, value: u64, tag: Option<u64>) -> CborOwned {
         write_positive(self.0.as_mut(), value, tag);
         finish_cbor(self.0)
     }
 
     /// Write a negative value of up to 64 bits — the represented number is `-1 - value`.
-    pub fn write_neg(mut self, value: u64, tag: Option<u64>) -> Cbor<'static> {
+    pub fn write_neg(mut self, value: u64, tag: Option<u64>) -> CborOwned {
         write_neg(self.0.as_mut(), value, tag);
         finish_cbor(self.0)
     }
 
     /// Write the given slice as a definite size byte string.
-    pub fn write_bytes(mut self, value: &[u8], tag: Option<u64>) -> Cbor<'static> {
+    pub fn write_bytes(mut self, value: &[u8], tag: Option<u64>) -> CborOwned {
         write_bytes(self.0.as_mut(), value, tag);
         finish_cbor(self.0)
     }
 
     /// Write the given slice as a definite size string.
-    pub fn write_str(mut self, value: &str, tag: Option<u64>) -> Cbor<'static> {
+    pub fn write_str(mut self, value: &str, tag: Option<u64>) -> CborOwned {
         write_str(self.0.as_mut(), value, tag);
         finish_cbor(self.0)
     }
 
-    pub fn write_bool(mut self, value: bool, tag: Option<u64>) -> Cbor<'static> {
+    pub fn write_bool(mut self, value: bool, tag: Option<u64>) -> CborOwned {
         write_bool(self.0.as_mut(), value, tag);
         finish_cbor(self.0)
     }
 
-    pub fn write_null(mut self, tag: Option<u64>) -> Cbor<'static> {
+    pub fn write_null(mut self, tag: Option<u64>) -> CborOwned {
         write_null(self.0.as_mut(), tag);
         finish_cbor(self.0)
     }
 
-    pub fn write_undefined(mut self, tag: Option<u64>) -> Cbor<'static> {
+    pub fn write_undefined(mut self, tag: Option<u64>) -> CborOwned {
         write_undefined(self.0.as_mut(), tag);
         finish_cbor(self.0)
     }
 
     /// Write custom literal value — [RFC7049 §2.3](https://tools.ietf.org/html/rfc7049#section-2.3) is required reading.
-    pub fn write_lit(mut self, value: Literal, tag: Option<u64>) -> Cbor<'static> {
+    pub fn write_lit(mut self, value: Literal, tag: Option<u64>) -> CborOwned {
         write_tag(self.0.as_mut(), tag);
         write_lit(self.0.as_mut(), value);
         finish_cbor(self.0)
     }
 
     /// Write a top-level array that is then filled by the returned builder.
-    pub fn write_array(mut self, tag: Option<u64>) -> ArrayBuilder<'a, Cbor<'static>> {
+    pub fn write_array(mut self, tag: Option<u64>) -> ArrayBuilder<'a, CborOwned> {
         write_tag(self.0.as_mut(), tag);
         write_indefinite(self.0.as_mut(), MAJOR_ARRAY);
         ArrayBuilder(self.0, Box::new(finish_cbor))
     }
 
     /// Write a top-level dict that is then filled by the returned builder.
-    pub fn write_dict(mut self, tag: Option<u64>) -> DictBuilder<'a, Cbor<'static>> {
+    pub fn write_dict(mut self, tag: Option<u64>) -> DictBuilder<'a, CborOwned> {
         write_tag(self.0.as_mut(), tag);
         write_indefinite(self.0.as_mut(), MAJOR_DICT);
         DictBuilder(self.0, Box::new(finish_cbor))

@@ -1,7 +1,6 @@
 use crate::{
-    builder::{WriteToArray, WriteToDict},
     constants::*,
-    Cbor, CborBuilder,
+    Cbor,
     CborValue::{self, *},
     TaggedValue,
 };
@@ -89,7 +88,7 @@ pub fn integer(bytes: &[u8]) -> Option<(u64, &[u8])> {
     }
 }
 
-fn indefinite(bytes: &[u8]) -> Option<(u64, &[u8])> {
+pub fn indefinite(bytes: &[u8]) -> Option<(u64, &[u8])> {
     if bytes[0] & 31 == INDEFINITE_SIZE {
         Some((u64::MAX, &bytes[1..]))
     } else {
@@ -97,7 +96,7 @@ fn indefinite(bytes: &[u8]) -> Option<(u64, &[u8])> {
     }
 }
 
-fn value_bytes(bytes: &[u8], skip: bool) -> Option<(Cow<[u8]>, &[u8])> {
+pub fn value_bytes(bytes: &[u8], skip: bool) -> Option<(Cow<[u8]>, &[u8])> {
     let m = major(bytes)?;
     let (len, mut rest) = integer(bytes).or_else(|| indefinite(bytes))?;
     if len == u64::MAX {
@@ -186,7 +185,7 @@ fn skip(bytes: &[u8]) -> Option<&[u8]> {
     }
 }
 
-fn tag(mut bytes: &[u8]) -> Option<(Option<u64>, &[u8])> {
+pub fn tag(mut bytes: &[u8]) -> Option<(Option<u64>, &[u8])> {
     let mut tag = None;
     while major(bytes)? == MAJOR_TAG {
         let (v, r) = integer(bytes)?;
@@ -202,11 +201,11 @@ fn value(bytes: &[u8]) -> Option<CborValue> {
         MAJOR_NEG => Some(Neg(integer(bytes)?.0)),
         MAJOR_BYTES => match value_bytes(bytes, false)? {
             (Cow::Borrowed(s), _) => Some(Bytes(s)),
-            (Cow::Owned(s), _) => Some(BytesOwned(s)),
+            _ => None,
         },
         MAJOR_STR => match string(bytes)? {
             (Cow::Borrowed(s), _) => Some(Str(s)),
-            (Cow::Owned(s), _) => Some(StrOwned(s)),
+            _ => None,
         },
         MAJOR_LIT => match bytes[0] & 31 {
             LIT_FALSE => Some(Bool(false)),
@@ -221,7 +220,7 @@ fn value(bytes: &[u8]) -> Option<CborValue> {
         MAJOR_ARRAY | MAJOR_DICT => {
             let rest = skip(bytes)?;
             let len = bytes.len() - rest.len();
-            Some(Composite(Cbor::borrow(&bytes[..len])))
+            Some(Composite(Cbor::trusting(&bytes[..len])))
         }
         _ => None,
     }
@@ -234,6 +233,7 @@ pub fn tagged_value(bytes: &[u8]) -> Option<TaggedValue> {
     })
 }
 
+// TODO index through CBOR encoded items
 pub fn ptr<'b>(mut bytes: &[u8], mut path: impl Iterator<Item = &'b str>) -> Option<TaggedValue> {
     match path.next() {
         Some(p) => {
@@ -295,146 +295,10 @@ pub fn ptr<'b>(mut bytes: &[u8], mut path: impl Iterator<Item = &'b str>) -> Opt
     }
 }
 
-pub fn canonicalise(bytes: &[u8], builder: CborBuilder<'_>) -> Option<Cbor<'static>> {
-    let (tag, bytes) = tag(bytes)?;
-    match major(bytes)? {
-        MAJOR_POS => Some(builder.write_pos(integer(bytes)?.0, tag)),
-        MAJOR_NEG => Some(builder.write_neg(integer(bytes)?.0, tag)),
-        MAJOR_BYTES => Some(builder.write_bytes(value_bytes(bytes, false)?.0.as_ref(), tag)),
-        MAJOR_STR => Some(builder.write_str(
-            std::str::from_utf8(value_bytes(bytes, false)?.0.as_ref()).ok()?,
-            tag,
-        )),
-        // TODO keep definite size arrays definite size if len < 24
-        MAJOR_ARRAY => {
-            let mut builder = builder.write_array(tag);
-            canonicalise_array(bytes, &mut builder)?;
-            Some(builder.finish())
-        }
-        MAJOR_DICT => {
-            let mut builder = builder.write_dict(tag);
-            canonicalise_dict(bytes, &mut builder)?;
-            Some(builder.finish())
-        }
-        MAJOR_LIT => Some(builder.write_lit(careful_literal(bytes)?.0, tag)),
-        _ => None,
-    }
-}
-
-fn update<'a, T>(b: &mut &'a [u8], val: Option<(T, &'a [u8])>) -> Option<T> {
-    match val {
-        Some((t, r)) => {
-            *b = r;
-            Some(t)
-        }
-        None => None,
-    }
-}
-
-fn canonicalise_array<'a>(bytes: &'a [u8], builder: &mut dyn WriteToArray) -> Option<&'a [u8]> {
-    fn one(bytes: &mut &[u8], builder: &mut dyn WriteToArray) -> Option<()> {
-        let (tag, b) = tag(bytes)?;
-        match major(b)? {
-            MAJOR_POS => builder.write_pos(update(bytes, integer(b))?, tag),
-            MAJOR_NEG => builder.write_neg(update(bytes, integer(b))?, tag),
-            MAJOR_BYTES => builder.write_bytes(update(bytes, value_bytes(b, false))?.as_ref(), tag),
-            MAJOR_STR => builder.write_str(
-                std::str::from_utf8(update(bytes, value_bytes(b, false))?.as_ref()).ok()?,
-                tag,
-            ),
-            MAJOR_ARRAY => {
-                let mut res = None;
-                builder.write_array_rec(tag, &mut |builder| {
-                    res = canonicalise_array(b, builder);
-                });
-                *bytes = res?;
-            }
-            MAJOR_DICT => {
-                let mut res = None;
-                builder.write_dict_rec(tag, &mut |builder| {
-                    res = canonicalise_dict(b, builder);
-                });
-                *bytes = res?;
-            }
-            MAJOR_LIT => builder.write_lit(update(bytes, careful_literal(b))?, tag),
-            _ => return None,
-        }
-        Some(())
-    }
-
-    // at this point the first byte (indefinite array) has already been written
-    let (len, mut bytes) = integer(bytes).or_else(|| indefinite(bytes))?;
-    if len == u64::MAX {
-        // marker for indefinite size
-        while *bytes.get(0)? != STOP_BYTE {
-            one(&mut bytes, builder)?;
-        }
-        Some(&bytes[1..])
-    } else {
-        for _ in 0..len {
-            one(&mut bytes, builder)?;
-        }
-        Some(bytes)
-    }
-}
-
-fn canonicalise_dict<'a>(bytes: &'a [u8], builder: &mut dyn WriteToDict) -> Option<&'a [u8]> {
-    fn one(bytes: &mut &[u8], builder: &mut dyn WriteToDict) -> Option<()> {
-        if major(bytes)? != MAJOR_STR {
-            return None;
-        }
-        let (key, b) = value_bytes(bytes, false)?;
-        let key = std::str::from_utf8(key.as_ref()).ok()?;
-        let (tag, b) = tag(b)?;
-        match major(b)? {
-            MAJOR_POS => builder.write_pos(key, update(bytes, integer(b))?, tag),
-            MAJOR_NEG => builder.write_neg(key, update(bytes, integer(b))?, tag),
-            MAJOR_BYTES => {
-                builder.write_bytes(key, update(bytes, value_bytes(b, false))?.as_ref(), tag)
-            }
-            MAJOR_STR => builder.write_str(
-                key,
-                std::str::from_utf8(update(bytes, value_bytes(b, false))?.as_ref()).ok()?,
-                tag,
-            ),
-            MAJOR_ARRAY => {
-                let mut res = None;
-                builder.write_array_rec(key, tag, &mut |builder| {
-                    res = canonicalise_array(b, builder);
-                });
-                *bytes = res?;
-            }
-            MAJOR_DICT => {
-                let mut res = None;
-                builder.write_dict_rec(key, tag, &mut |builder| {
-                    res = canonicalise_dict(b, builder);
-                });
-                *bytes = res?;
-            }
-            MAJOR_LIT => builder.write_lit(key, update(bytes, careful_literal(b))?, tag),
-            _ => return None,
-        }
-        Some(())
-    }
-
-    // at this point the first byte (indefinite array) has already been written
-    let (len, mut bytes) = integer(bytes).or_else(|| indefinite(bytes))?;
-    if len == u64::MAX {
-        // marker for indefinite size
-        while *bytes.get(0)? != STOP_BYTE {
-            one(&mut bytes, builder)?;
-        }
-        Some(&bytes[1..])
-    } else {
-        for _ in 0..len {
-            one(&mut bytes, builder)?;
-        }
-        Some(bytes)
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use crate::CborOwned;
+
     use super::*;
     use serde_json::json;
     use TaggedValue::*;
@@ -482,9 +346,9 @@ mod tests {
 
         for (res, bytes) in cases {
             let cbor = Cbor::trusting(&*bytes);
-            assert_eq!(cbor.value(), Some(Plain(StrOwned(res.to_owned()))));
+            assert_eq!(cbor.value(), None);
 
-            let cbor = Cbor::canonical(bytes, None).unwrap();
+            let cbor = CborOwned::canonical(bytes, None).unwrap();
             assert_eq!(cbor.value(), Some(Plain(Str(res))));
         }
     }
@@ -494,7 +358,7 @@ mod tests {
         let bytes = vec![0xfau8, 0, 0, 51, 17];
         let cbor = Cbor::trusting(&*bytes);
         assert_eq!(cbor.value(), Some(Plain(Float(1.8319174824118334e-41))));
-        let cbor = Cbor::canonical(bytes, None).unwrap();
+        let cbor = CborOwned::canonical(bytes, None).unwrap();
         assert_eq!(cbor.value(), Some(Plain(Float(1.8319174824118334e-41))));
     }
 }

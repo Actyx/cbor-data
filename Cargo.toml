@@ -8,6 +8,7 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 half = "1.6.0"
+base64 = "0.13"
 
 [dev-dependencies]
 serde = "1"

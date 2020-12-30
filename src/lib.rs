@@ -16,18 +16,27 @@
 //! juxtaposition of its elements, meaning that indexing will have to decode items as it skips over
 //! them.
 //!
-//! CBOR tags are faithfully reported (well, the innermost one, in case multiple are present — the
-//! RFC is not perfectly clear here) but not interpreted at this point, meaning that a bignum will
-//! come out as a binary string with a tag.
+//! Regarding the interpretation of parsed data you have the option of inspecting the particular
+//! encoding (by pattern matching on [`TaggedValue`](struct.TaggedValue)) or extracting the information
+//! you need using the API methods. In the latter case, many binary representations may yield the
+//! same value, e.g. when asking for an integer the result may stem from a non-optimal encoding
+//! (like writing 57 as 64-bit value) or from a BigDecimal with mantissa 570 and exponent -1.
 
-use std::{borrow::Cow, fmt::Debug};
+use std::fmt::Debug;
 
 mod builder;
+mod canonical;
 mod constants;
 mod reader;
+mod value;
 
 pub use builder::{ArrayBuilder, CborBuilder, DictBuilder, WriteToArray, WriteToDict};
+use canonical::canonicalise;
 pub use reader::Literal;
+pub use value::{CborValue, TaggedValue};
+
+use constants::{MAJOR_ARRAY, MAJOR_DICT, MAJOR_TAG};
+use reader::{integer, major, ptr, tagged_value};
 
 /// Wrapper around some bytes (referenced or owned) that allows parsing as CBOR value.
 ///
@@ -40,8 +49,8 @@ pub use reader::Literal;
 ///
 /// Canonicalisation rqeuires an intermediary data buffer, which can be supplied (and reused)
 /// by the caller to save on allocations.
-#[derive(Clone, PartialEq)]
-pub struct Cbor<'a>(Cow<'a, [u8]>);
+#[derive(PartialEq)]
+pub struct Cbor<'a>(&'a [u8]);
 
 impl<'a> Debug for Cbor<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -57,122 +66,37 @@ impl<'a> Debug for Cbor<'a> {
     }
 }
 
-/// Low-level decoded form of a CBOR item. Use TaggedValue for inspecting values.
-///
-/// Beware of the `Neg` variant, which carries the `-1 - x`.
-///
-/// The Owned variants are only generated when decoding indefinite size (byte) strings in order
-/// to present a contiguous slice of memory. You will never see these if you used
-/// [`Cbor::canonical()`](struct.Cbor#method.canonical).
-#[derive(Clone, Debug, PartialEq)]
-pub enum CborValue<'a> {
-    Pos(u64),
-    Neg(u64),
-    Float(f64),
-    Str(&'a str),
-    StrOwned(String),
-    Bytes(&'a [u8]),
-    BytesOwned(Vec<u8>),
-    Bool(bool),
-    Null,
-    Undefined,
-    Composite(Cbor<'a>),
-}
-use CborValue::*;
-
-impl<'a> CborValue<'a> {
-    pub fn with_tag(self, tag: u64) -> TaggedValue<'a> {
-        Tagged(tag, self)
+impl<'a> Cbor<'a> {
+    /// Wrap in Cbor for indexing.
+    ///
+    /// No checks on the integrity are made, indexing methods may panic if encoded
+    /// lengths are out of bound or when encountering indefinite size (byte) strings.
+    /// If you want to carefully treat data obtained from unreliable sources, prefer
+    /// [`CborOwned::canonical`](struct.CborOwned#method.canonical). The results of
+    /// [`CborBuilder`](struct.CborBuilder) can also safely be fed to this method.
+    pub fn trusting(bytes: &'a [u8]) -> Self {
+        Self(bytes)
     }
-    pub fn without_tag(self) -> TaggedValue<'a> {
-        Plain(self)
+
+    /// Copy the underlying bytes to create a fully owned CBOR value.
+    pub fn to_owned(&self) -> CborOwned {
+        CborOwned::trusting(self.as_ref())
     }
 }
 
-/// Representation of a possibly tagged CBOR data item.
-#[derive(Clone, Debug, PartialEq)]
-pub enum TaggedValue<'a> {
-    Plain(CborValue<'a>),
-    Tagged(u64, CborValue<'a>),
-}
-use constants::{MAJOR_ARRAY, MAJOR_DICT, MAJOR_TAG};
-use reader::{canonicalise, integer, major, ptr, tagged_value};
-use TaggedValue::*;
-
-// TODO flesh out and extract data more thoroughly
-impl<'a> TaggedValue<'a> {
-    /// Try to interpret this value as a 64bit unsigned integer.
-    ///
-    /// Returns None if it is not an integer type or does not fit into 64 bits.
-    pub fn as_u64(&self) -> Option<u64> {
-        // TODO should also check for bigint
-        match self {
-            Plain(Pos(x)) => Some(*x),
-            _ => None,
-        }
-    }
-
-    pub fn as_f64(&self) -> Option<f64> {
-        match self {
-            Plain(Pos(x)) => Some(*x as f64),
-            Plain(Neg(x)) => Some(-1.0 - (*x as f64)),
-            Plain(Float(f)) => Some(*f),
-            _ => None,
-        }
-    }
-
-    /// Try to interpret this value as string.
-    ///
-    /// Returns None if the type is not a (byte) string or the bytes are not valid UTF-8.
-    pub fn as_str(&self) -> Option<&str> {
-        match self {
-            Plain(Str(s)) => Some(*s),
-            Plain(Bytes(b)) => std::str::from_utf8(*b).ok(),
-            _ => None,
-        }
-    }
-
-    pub fn as_composite(&self) -> Option<&Cbor<'a>> {
-        match self {
-            Tagged(_, Composite(c)) => Some(c),
-            Plain(Composite(c)) => Some(c),
-            _ => None,
-        }
-    }
-}
-
-impl Cbor<'static> {
-    /// Copy the bytes and wrap in Cbor for indexing.
-    ///
-    /// No checks on the integrity are made, indexing methods may panic if encoded lengths are out of bound.
-    pub fn trusting(bytes: impl AsRef<[u8]>) -> Self {
-        Self(Cow::Owned(bytes.as_ref().to_owned()))
-    }
-
-    /// Copy the bytes while checking for integrity and replacing indefinite (byte) strings with definite ones.
-    ///
-    /// This constructor will go through and decode the whole provided CBOR bytes and write them into a
-    /// vector, thereby
-    ///
-    ///  - retaining only innermost tags
-    ///  - writing arrays and dicts using indefinite size format
-    ///  - writing numbers in their smallest form
-    ///
-    /// The used vector can be provided (to reuse previously allocated memory) or newly created. In the former
-    /// case all contents of the provided argument will be cleared.
-    pub fn canonical(bytes: impl AsRef<[u8]>, scratch_space: Option<&mut Vec<u8>>) -> Option<Self> {
-        canonicalise(
-            bytes.as_ref(),
-            scratch_space
-                .map(|v| CborBuilder::with_scratch_space(v))
-                .unwrap_or_else(CborBuilder::new),
-        )
+impl<'a> AsRef<[u8]> for Cbor<'a> {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
     }
 }
 
 impl<'a> Cbor<'a> {
+    pub fn as_slice(&self) -> &'a [u8] {
+        self.0
+    }
+
     /// Extract the single value represented by this piece of CBOR
-    pub fn value(&self) -> Option<TaggedValue> {
+    pub fn value(&self) -> Option<TaggedValue<'a>> {
         tagged_value(self.as_slice())
     }
 
@@ -180,14 +104,14 @@ impl<'a> Cbor<'a> {
     ///
     /// The empty string will yield the same as calling [`value()`](#method.value). If path elements
     /// may contain `.` then use [`index_iter()`](#method.index_iter).
-    pub fn index(&self, path: &str) -> Option<TaggedValue> {
+    pub fn index(&self, path: &str) -> Option<TaggedValue<'a>> {
         ptr(self.as_slice(), path.split_terminator('.'))
     }
 
     /// Extract a value by indexing into arrays and dicts, with path elements yielded by an iterator.
     ///
     /// The empty iterator will yield the same as calling [`value()`](#method.value).
-    pub fn index_iter<'b>(&self, path: impl Iterator<Item = &'b str>) -> Option<TaggedValue> {
+    pub fn index_iter<'b>(&self, path: impl Iterator<Item = &'b str>) -> Option<TaggedValue<'a>> {
         ptr(self.as_slice(), path)
     }
 
@@ -216,14 +140,80 @@ impl<'a> Cbor<'a> {
         }
         major(bytes) == Some(MAJOR_DICT)
     }
+}
 
-    fn borrow(bytes: &'a [u8]) -> Self {
-        Self(Cow::Borrowed(bytes))
+#[derive(PartialEq, Clone)]
+pub struct CborOwned(Vec<u8>);
+
+impl Debug for CborOwned {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Cbor::trusting(&*self.0).fmt(f)
+    }
+}
+
+impl CborOwned {
+    /// Copy the bytes and wrap for indexing.
+    ///
+    /// No checks on the integrity are made, indexing methods may panic if encoded lengths are out of bound.
+    /// If you want to carefully treat data obtained from unreliable sources, prefer
+    /// [`canonical()`](#method.canonical).
+    pub fn trusting(bytes: impl Into<Vec<u8>>) -> Self {
+        Self(bytes.into())
     }
 
-    /// A view onto the underlying bytes.
+    /// Copy the bytes while checking for integrity and replacing indefinite (byte) strings with definite ones.
+    ///
+    /// This constructor will go through and decode the whole provided CBOR bytes and write them into a
+    /// vector, thereby
+    ///
+    ///  - retaining only innermost tags
+    ///  - writing arrays and dicts using indefinite size format
+    ///  - writing numbers in their smallest form
+    ///
+    /// The used vector can be provided (to reuse previously allocated memory) or newly created. In the former
+    /// case all contents of the provided argument will be cleared.
+    pub fn canonical(bytes: impl AsRef<[u8]>, scratch_space: Option<&mut Vec<u8>>) -> Option<Self> {
+        canonicalise(
+            bytes.as_ref(),
+            scratch_space
+                .map(|v| CborBuilder::with_scratch_space(v))
+                .unwrap_or_else(CborBuilder::new),
+        )
+    }
+
+    /// Borrow the underlying bytes for Cbor interpretation.
+    pub fn borrow(&self) -> Cbor {
+        Cbor::trusting(self.as_ref())
+    }
+
     pub fn as_slice(&self) -> &[u8] {
-        self.0.as_ref()
+        self.0.as_slice()
+    }
+
+    /// Extract the single value represented by this piece of CBOR
+    pub fn value(&self) -> Option<TaggedValue> {
+        self.borrow().value()
+    }
+
+    /// Extract a value by indexing into arrays and dicts, with path elements separated by dot.
+    ///
+    /// The empty string will yield the same as calling [`value()`](#method.value). If path elements
+    /// may contain `.` then use [`index_iter()`](#method.index_iter).
+    pub fn index(&self, path: &str) -> Option<TaggedValue> {
+        self.borrow().index(path)
+    }
+
+    /// Extract a value by indexing into arrays and dicts, with path elements yielded by an iterator.
+    ///
+    /// The empty iterator will yield the same as calling [`value()`](#method.value).
+    pub fn index_iter<'b>(&self, path: impl Iterator<Item = &'b str>) -> Option<TaggedValue> {
+        self.borrow().index_iter(path)
+    }
+}
+
+impl AsRef<[u8]> for CborOwned {
+    fn as_ref(&self) -> &[u8] {
+        &*self.0
     }
 }
 
@@ -233,6 +223,7 @@ mod tests {
     use crate::{
         builder::{WriteToArray, WriteToDict},
         constants::*,
+        value::{CborValue::*, TaggedValue::*},
     };
 
     #[test]
@@ -258,7 +249,7 @@ mod tests {
 
     #[test]
     fn roundtrip_complex() {
-        let mut array = CborBuilder::new().write_array(Some(TAG_FRACTION));
+        let mut array = CborBuilder::new().write_array(Some(TAG_BIGDECIMAL));
         array.write_pos(5, None);
 
         let mut dict = array.write_dict(None);
@@ -285,17 +276,23 @@ mod tests {
         array.write_str("hello", None);
         let the_array = array.finish();
 
-        let value = complex.value().unwrap().as_composite().unwrap().clone();
+        let value = complex.value().unwrap().as_composite().unwrap().to_owned();
         assert_eq!(
             complex.index(""),
-            Some(Tagged(TAG_FRACTION, Composite(value)))
+            Some(Tagged(TAG_BIGDECIMAL, Composite(value.borrow())))
         );
         assert_eq!(complex.index("a"), None);
         assert_eq!(complex.index("0"), Some(Plain(Pos(5))));
-        assert_eq!(complex.index("1"), Some(Plain(Composite(the_dict))));
+        assert_eq!(
+            complex.index("1"),
+            Some(Plain(Composite(the_dict.borrow())))
+        );
         assert_eq!(complex.index("1.a"), Some(Plain(Neg(666))));
         assert_eq!(complex.index("1.b"), Some(Plain(Bytes(b"defdef"))));
-        assert_eq!(complex.index("2"), Some(Plain(Composite(the_array))));
+        assert_eq!(
+            complex.index("2"),
+            Some(Plain(Composite(the_array.borrow())))
+        );
         assert_eq!(complex.index("2.0"), Some(Plain(Bool(false))));
         assert_eq!(complex.index("2.1"), Some(Plain(Str("hello"))));
         assert_eq!(complex.index("3"), Some(Tagged(12345, Null)));
@@ -307,16 +304,22 @@ mod tests {
             0xc4u8, 0x84, 5, 0xa2, 0x61, b'a', 0x39, 2, 154, 0x61, b'b', 0x46, b'd', b'e', b'f',
             b'd', b'e', b'f', 0x82, 0xf4, 0x65, b'h', b'e', b'l', b'l', b'o', 0xd9, 48, 57, 0xf6,
         ];
-        let complex = Cbor::canonical(&*bytes, None).unwrap();
-        let the_dict = Cbor::canonical(&bytes[3..18], None).unwrap();
-        let the_array = Cbor::canonical(&bytes[18..26], None).unwrap();
+        let complex = CborOwned::canonical(&*bytes, None).unwrap();
+        let the_dict = CborOwned::canonical(&bytes[3..18], None).unwrap();
+        let the_array = CborOwned::canonical(&bytes[18..26], None).unwrap();
 
         assert_eq!(complex.index("a"), None);
         assert_eq!(complex.index("0"), Some(Plain(Pos(5))));
-        assert_eq!(complex.index("1"), Some(Plain(Composite(the_dict))));
+        assert_eq!(
+            complex.index("1"),
+            Some(Plain(Composite(the_dict.borrow())))
+        );
         assert_eq!(complex.index("1.a"), Some(Plain(Neg(666))));
         assert_eq!(complex.index("1.b"), Some(Plain(Bytes(b"defdef"))));
-        assert_eq!(complex.index("2"), Some(Plain(Composite(the_array))));
+        assert_eq!(
+            complex.index("2"),
+            Some(Plain(Composite(the_array.borrow())))
+        );
         assert_eq!(complex.index("2.0"), Some(Plain(Bool(false))));
         assert_eq!(complex.index("2.1"), Some(Plain(Str("hello"))));
         assert_eq!(complex.index("3"), Some(Tagged(12345, Null)));
