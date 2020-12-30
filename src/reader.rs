@@ -1,7 +1,7 @@
 use crate::{
     constants::*,
     value::Tag,
-    CborValue,
+    Cbor, CborValue,
     ValueKind::{self, *},
 };
 use std::{borrow::Cow, str::FromStr};
@@ -204,38 +204,42 @@ pub fn tag(mut bytes: &[u8]) -> Option<(Option<Tag>, &[u8])> {
     Some((tag, bytes))
 }
 
-fn value(bytes: &[u8]) -> Option<(ValueKind, &[u8])> {
+fn value(bytes: &[u8]) -> Option<(ValueKind, &[u8], &[u8])> {
     match major(bytes)? {
-        MAJOR_POS => integer(bytes).map(|(k, b, _)| (Pos(k), b)),
-        MAJOR_NEG => integer(bytes).map(|(k, b, _)| (Neg(k), b)),
+        MAJOR_POS => integer(bytes).map(|(k, b, r)| (Pos(k), b, r)),
+        MAJOR_NEG => integer(bytes).map(|(k, b, r)| (Neg(k), b, r)),
         MAJOR_BYTES => match value_bytes(bytes, false)? {
-            (Cow::Borrowed(s), rest) => Some((Bytes(s), &bytes[..(bytes.len() - rest.len())])),
+            (Cow::Borrowed(s), rest) => {
+                Some((Bytes(s), &bytes[..(bytes.len() - rest.len())], rest))
+            }
             _ => None,
         },
         MAJOR_STR => match string(bytes)? {
-            (Cow::Borrowed(s), rest) => Some((Str(s), &bytes[..(bytes.len() - rest.len())])),
+            (Cow::Borrowed(s), rest) => Some((Str(s), &bytes[..(bytes.len() - rest.len())], rest)),
             _ => None,
         },
         MAJOR_LIT => match bytes[0] & 31 {
-            LIT_FALSE => Some((Bool(false), &bytes[..1])),
-            LIT_TRUE => Some((Bool(true), &bytes[..1])),
-            LIT_NULL => Some((Null, &bytes[..1])),
-            LIT_UNDEFINED => Some((Undefined, &bytes[..1])),
-            LIT_SIMPLE => Some((Simple(bytes[1]), &bytes[..2])),
-            LIT_FLOAT16 | LIT_FLOAT32 | LIT_FLOAT64 => float(bytes).map(|(k, b, _)| (Float(k), b)),
-            x if x < 24 => Some((Simple(x), &bytes[..1])),
+            LIT_FALSE => Some((Bool(false), &bytes[..1], &bytes[1..])),
+            LIT_TRUE => Some((Bool(true), &bytes[..1], &bytes[1..])),
+            LIT_NULL => Some((Null, &bytes[..1], &bytes[1..])),
+            LIT_UNDEFINED => Some((Undefined, &bytes[..1], &bytes[1..])),
+            LIT_SIMPLE => Some((Simple(bytes[1]), &bytes[..2], &bytes[2..])),
+            LIT_FLOAT16 | LIT_FLOAT32 | LIT_FLOAT64 => {
+                float(bytes).map(|(k, b, r)| (Float(k), b, r))
+            }
+            x if x < 24 => Some((Simple(x), &bytes[..1], &bytes[1..])),
             _ => None,
         },
         MAJOR_TAG => integer(bytes).and_then(|(_, _, rest)| value(rest)),
-        MAJOR_ARRAY => skip(bytes).map(|rest| (Array, &bytes[..(bytes.len() - rest.len())])),
-        MAJOR_DICT => skip(bytes).map(|rest| (Dict, &bytes[..(bytes.len() - rest.len())])),
+        MAJOR_ARRAY => skip(bytes).map(|rest| (Array, &bytes[..(bytes.len() - rest.len())], rest)),
+        MAJOR_DICT => skip(bytes).map(|rest| (Dict, &bytes[..(bytes.len() - rest.len())], rest)),
         _ => None,
     }
 }
 
 pub fn tagged_value(bytes: &[u8]) -> Option<CborValue> {
     let tag = tag(bytes)?.0;
-    let (kind, bytes) = value(bytes)?;
+    let (kind, bytes, _rest) = value(bytes)?;
     Some(CborValue { tag, kind, bytes })
 }
 
@@ -246,56 +250,64 @@ pub fn ptr<'b>(mut bytes: &[u8], mut path: impl Iterator<Item = &'b str>) -> Opt
             bytes = v.bytes;
             match v.kind {
                 Array => {
-                    let mut idx = u64::from_str(p).ok()?;
-                    let (len, _, mut rest) = integer(bytes).or_else(|| indefinite(bytes))?;
-                    if len == u64::MAX {
-                        // marker for indefinite size
-                        while idx > 0 && rest[0] != STOP_BYTE {
-                            rest = skip(rest)?;
-                            idx -= 1;
-                        }
-                        if rest[0] == STOP_BYTE {
-                            None
-                        } else {
-                            ptr(rest, path)
-                        }
-                    } else if idx < len {
-                        while idx > 0 {
-                            rest = skip(rest)?;
-                            idx -= 1;
-                        }
-                        ptr(rest, path)
-                    } else {
-                        None
-                    }
+                    let idx = u64::from_str(p).ok()?;
+                    let (len, _, rest) = integer(bytes).or_else(|| indefinite(bytes))?;
+                    let mut iter = Iter::new(rest, len);
+                    ptr(iter.nth(idx as usize)?.as_slice(), path)
                 }
                 Dict => {
-                    let (len, _, mut rest) = integer(bytes).or_else(|| indefinite(bytes))?;
-                    if len == u64::MAX {
-                        // marker for indefinite size
-                        while rest[0] != STOP_BYTE {
-                            let (key, r) = string(rest)?;
-                            if key == p {
-                                return ptr(r, path);
-                            }
-                            rest = skip(r)?;
-                        }
-                        None
-                    } else {
-                        for _ in 0..len {
-                            let (key, r) = string(rest)?;
-                            if key == p {
-                                return ptr(r, path);
-                            }
-                            rest = skip(r)?;
-                        }
-                        None
+                    let (mut len, _, rest) = integer(bytes).or_else(|| indefinite(bytes))?;
+                    if len != u64::MAX {
+                        len *= 2;
                     }
+                    let mut iter = Iter::new(rest, len);
+                    while let Some(key) = iter.next() {
+                        if let Str(s) = value(key.as_slice())?.0 {
+                            let v = iter.next()?;
+                            if s == p {
+                                return ptr(v.as_slice(), path);
+                            }
+                        } else {
+                            return None;
+                        }
+                    }
+                    None
                 }
                 _ => None,
             }
         }
         None => tagged_value(bytes),
+    }
+}
+
+pub struct Iter<'a>(&'a [u8], Option<u64>);
+
+impl<'a> Iter<'a> {
+    pub(crate) fn new(bytes: &'a [u8], len: u64) -> Self {
+        if len == u64::MAX {
+            Self(bytes, None)
+        } else {
+            Self(bytes, Some(len))
+        }
+    }
+}
+
+impl<'a> Iterator for Iter<'a> {
+    type Item = Cbor<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let Iter(b, elems) = self;
+        if *elems == Some(0) || *elems == None && *b.get(0)? == STOP_BYTE {
+            None
+        } else {
+            let (_kind, _bytes, rest) = value(b)?;
+            let bytes = &b[..b.len() - rest.len()];
+            if let Some(x) = elems.as_mut() {
+                *x -= 1;
+            }
+            *b = rest;
+            Some(Cbor::trusting(bytes))
+        }
     }
 }
 

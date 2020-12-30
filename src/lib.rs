@@ -7,9 +7,9 @@
 //!
 //! This library presents a range of tradeoffs when using this data format. You can just use the
 //! bits you get from the wire or from a file, without paying any initial overhead but with the
-//! possibility of panicking during access and having to allocate when extracting (byte) strings
-//! in case indefinite size encoding was used. Or you can validate and canonicalise the bits before
-//! using them, removing the possibility of pancis and guaranteeing that indexing into the data
+//! possibility of panicking during access and panicking when extracting (byte) strings encoded
+//! with indefinite size. Or you can validate and canonicalise the bits before
+//! using them, removing the possibility of panics and guaranteeing that indexing into the data
 //! will never allocate.
 //!
 //! Regarding performance you should keep in mind that arrays and dictionaries are encoded as flat
@@ -28,6 +28,8 @@ mod builder;
 mod canonical;
 mod constants;
 mod reader;
+#[cfg(test)]
+mod tests;
 mod value;
 
 pub use builder::{ArrayBuilder, CborBuilder, DictBuilder, WriteToArray, WriteToDict};
@@ -42,7 +44,7 @@ use reader::{integer, major, ptr, tagged_value};
 ///
 /// For details on the format see [RFC7049](https://tools.ietf.org/html/rfc7049).
 ///
-/// When interpreting CBOR messages from the outside (e.g. from the network) then it is
+/// When interpreting CBOR messages from the outside (e.g. from the network) it is
 /// advisable to ingest those using the [`canonical`](#method.canonical) constructor.
 /// In case the message was encoded for example using [`CborBuilder`](./struct.CborBuilder.html)
 /// it is sufficient to use the [`trusting`](#method.trusting) constructor.
@@ -79,6 +81,12 @@ impl<'a> Cbor<'a> {
     }
 
     /// Copy the underlying bytes to create a fully owned CBOR value.
+    ///
+    /// No checks on the integrity are made, indexing methods may panic if encoded
+    /// lengths are out of bound or when encountering indefinite size (byte) strings.
+    /// If you want to carefully treat data obtained from unreliable sources, prefer
+    /// [`CborOwned::canonical`](struct.CborOwned#method.canonical). The results of
+    /// [`CborBuilder`](struct.CborBuilder) can also safely be fed to this method.
     pub fn to_owned(&self) -> CborOwned {
         CborOwned::trusting(self.as_ref())
     }
@@ -216,110 +224,5 @@ impl CborOwned {
 impl AsRef<[u8]> for CborOwned {
     fn as_ref(&self) -> &[u8] {
         &*self.0
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{
-        builder::{WriteToArray, WriteToDict},
-        constants::*,
-        value::{CborValue, ValueKind::*},
-    };
-
-    #[test]
-    fn roundtrip_simple() {
-        let pos = CborBuilder::new().write_pos(42, Some(56));
-        assert_eq!(pos.value(), Some(CborValue::fake(Some(56), Pos(42))));
-
-        let neg = CborBuilder::new().write_neg(42, Some(56));
-        assert_eq!(neg.value(), Some(CborValue::fake(Some(56), Neg(42))));
-
-        let bool = CborBuilder::new().write_bool(true, None);
-        assert_eq!(bool.value(), Some(CborValue::fake(None, Bool(true))));
-
-        let null = CborBuilder::new().write_null(Some(314));
-        assert_eq!(null.value(), Some(CborValue::fake(Some(314), Null)));
-
-        let string = CborBuilder::new().write_str("huhu", Some(TAG_CBOR_MARKER));
-        assert_eq!(
-            string.value(),
-            Some(CborValue::fake(Some(55799), Str("huhu")))
-        );
-
-        let bytes = CborBuilder::new().write_bytes(b"abcd", None);
-        assert_eq!(bytes.value(), Some(CborValue::fake(None, Bytes(b"abcd"))));
-    }
-
-    #[test]
-    fn roundtrip_complex() {
-        let mut array = CborBuilder::new().write_array(Some(TAG_BIGDECIMAL));
-        array.write_pos(5, None);
-
-        let mut dict = array.write_dict(None);
-        dict.write_neg("a", 666, None);
-        dict.write_bytes("b", b"defdef", None);
-        let array = dict.finish();
-
-        let mut array2 = array.write_array(None);
-        array2.write_bool(false, None);
-        array2.write_str("hello", None);
-        let mut array = array2.finish();
-
-        array.write_null(Some(12345));
-
-        let complex = array.finish();
-
-        assert_eq!(
-            complex.index(""),
-            Some(CborValue::fake(Some(TAG_BIGDECIMAL), Array))
-        );
-        assert_eq!(complex.index("a"), None);
-        assert_eq!(complex.index("0"), Some(CborValue::fake(None, Pos(5))));
-        assert_eq!(complex.index("1"), Some(CborValue::fake(None, Dict)));
-        assert_eq!(complex.index("1.a"), Some(CborValue::fake(None, Neg(666))));
-        assert_eq!(
-            complex.index("1.b"),
-            Some(CborValue::fake(None, Bytes(b"defdef")))
-        );
-        assert_eq!(complex.index("2"), Some(CborValue::fake(None, Array)));
-        assert_eq!(
-            complex.index("2.0"),
-            Some(CborValue::fake(None, Bool(false)))
-        );
-        assert_eq!(
-            complex.index("2.1"),
-            Some(CborValue::fake(None, Str("hello")))
-        );
-        assert_eq!(complex.index("3"), Some(CborValue::fake(Some(12345), Null)));
-    }
-
-    #[test]
-    fn canonical() {
-        let bytes = vec![
-            0xc4u8, 0x84, 5, 0xa2, 0x61, b'a', 0x39, 2, 154, 0x61, b'b', 0x46, b'd', b'e', b'f',
-            b'd', b'e', b'f', 0x82, 0xf4, 0x65, b'h', b'e', b'l', b'l', b'o', 0xd9, 48, 57, 0xf6,
-        ];
-        let complex = CborOwned::canonical(&*bytes, None).unwrap();
-
-        assert_eq!(complex.index("a"), None);
-        assert_eq!(complex.index("0"), Some(CborValue::fake(None, Pos(5))));
-        assert_eq!(complex.index("1"), Some(CborValue::fake(None, Dict)));
-        assert_eq!(complex.index("1.a"), Some(CborValue::fake(None, Neg(666))));
-        assert_eq!(
-            complex.index("1.b"),
-            Some(CborValue::fake(None, Bytes(b"defdef")))
-        );
-        assert_eq!(complex.index("2"), Some(CborValue::fake(None, Array)));
-        assert_eq!(
-            complex.index("2.0"),
-            Some(CborValue::fake(None, Bool(false)))
-        );
-        assert_eq!(
-            complex.index("2.1"),
-            Some(CborValue::fake(None, Str("hello")))
-        );
-        assert_eq!(complex.index("3"), Some(CborValue::fake(Some(12345), Null)));
     }
 }
