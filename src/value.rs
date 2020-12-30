@@ -1,6 +1,4 @@
-use std::borrow::Cow;
-
-use crate::{constants::*, reader::tagged_value, Cbor};
+use crate::{constants::*, reader::tagged_value};
 
 /// Low-level decoded form of a CBOR item. Use TaggedValue for inspecting values.
 ///
@@ -9,8 +7,8 @@ use crate::{constants::*, reader::tagged_value, Cbor};
 /// The Owned variants are only generated when decoding indefinite size (byte) strings in order
 /// to present a contiguous slice of memory. You will never see these if you used
 /// [`Cbor::canonical()`](struct.Cbor#method.canonical).
-#[derive(Debug, PartialEq)]
-pub enum CborValue<'a> {
+#[derive(Debug, PartialEq, Clone)]
+pub enum ValueKind<'a> {
     Pos(u64),
     Neg(u64),
     Float(f64),
@@ -19,72 +17,54 @@ pub enum CborValue<'a> {
     Bool(bool),
     Null,
     Undefined,
-    Composite(Cbor<'a>),
+    Simple(u8),
+    Array,
+    Dict,
 }
-use CborValue::*;
+use ValueKind::*;
 
-impl<'a> CborValue<'a> {
-    pub const fn with_tag(self, tag: u64) -> TaggedValue<'a> {
-        Tagged(tag, self)
-    }
-    pub const fn without_tag(self) -> TaggedValue<'a> {
-        Plain(self)
-    }
-
-    fn copied(&self) -> Self {
-        match self {
-            Pos(x) => Pos(*x),
-            Neg(x) => Neg(*x),
-            Float(x) => Float(*x),
-            Str(s) => Str(*s),
-            Bytes(b) => Bytes(*b),
-            Bool(b) => Bool(*b),
-            Null => Null,
-            Undefined => Undefined,
-            Composite(c) => Composite(Cbor::trusting(c.as_slice())),
-        }
-    }
+#[derive(Debug, PartialEq, Clone)]
+pub struct Tag<'a> {
+    pub tag: u64,
+    pub bytes: &'a [u8],
 }
 
 /// Representation of a possibly tagged CBOR data item.
-#[derive(Debug, PartialEq)]
-pub enum TaggedValue<'a> {
-    Plain(CborValue<'a>),
-    Tagged(u64, CborValue<'a>),
+#[derive(Debug, Clone)]
+pub struct CborValue<'a> {
+    pub tag: Option<Tag<'a>>,
+    pub kind: ValueKind<'a>,
+    pub bytes: &'a [u8],
 }
-use TaggedValue::*;
+
+impl<'a> PartialEq<CborValue<'_>> for CborValue<'a> {
+    fn eq(&self, other: &CborValue<'_>) -> bool {
+        self.tag() == other.tag() && self.kind == other.kind
+    }
+}
 
 // TODO flesh out and extract data more thoroughly
-impl<'a> TaggedValue<'a> {
-    /// strip off wrappers of CBOR encoded item
-    fn decoded(&self) -> Option<Self> {
-        match self {
-            Plain(p) => Some(Plain(p.copied())),
-            Tagged(TAG_CBOR_ITEM, Bytes(b)) => tagged_value(*b)?.decoded(),
-            Tagged(tag, p) => Some(Tagged(*tag, p.copied())),
+impl<'a> CborValue<'a> {
+    #[cfg(test)]
+    pub fn fake(tag: Option<u64>, kind: ValueKind<'a>) -> Self {
+        Self {
+            tag: tag.map(|tag| Tag { tag, bytes: b"" }),
+            kind,
+            bytes: b"",
         }
     }
 
-    fn plain(&self) -> &CborValue<'a> {
-        match self {
-            Plain(p) => p,
-            Tagged(_, p) => p,
+    /// strip off wrappers of CBOR encoded item
+    fn decoded(&self) -> Option<Self> {
+        if let (Some(TAG_CBOR_ITEM), Bytes(b)) = (self.tag(), &self.kind) {
+            tagged_value(b)?.decoded()
+        } else {
+            Some(self.clone())
         }
     }
 
     fn tag(&self) -> Option<u64> {
-        match self {
-            Plain(_) => None,
-            Tagged(tag, _) => Some(*tag),
-        }
-    }
-
-    /// Make a copy of the TaggedValue while still referencing the same bytes.
-    pub fn copied(&self) -> Self {
-        match self {
-            Plain(p) => Plain(p.copied()),
-            Tagged(tag, p) => Tagged(*tag, p.copied()),
-        }
+        self.tag.as_ref().map(|t| t.tag)
     }
 
     /// Try to interpret this value as a 64bit unsigned integer.
@@ -92,17 +72,17 @@ impl<'a> TaggedValue<'a> {
     /// Returns None if it is not an integer type or does not fit into 64 bits.
     pub fn as_u64(&self) -> Option<u64> {
         // TODO should also check for bigint
-        match self.decoded()? {
-            Plain(Pos(x)) => Some(x),
+        match self.decoded()?.kind {
+            Pos(x) => Some(x),
             _ => None,
         }
     }
 
     pub fn as_f64(&self) -> Option<f64> {
-        match self {
-            Plain(Pos(x)) => Some(*x as f64),
-            Plain(Neg(x)) => Some(-1.0 - (*x as f64)),
-            Plain(Float(f)) => Some(*f),
+        match self.decoded()?.kind {
+            Pos(x) => Some(x as f64),
+            Neg(x) => Some(-1.0 - (x as f64)),
+            Float(f) => Some(f),
             _ => None,
         }
     }
@@ -110,22 +90,14 @@ impl<'a> TaggedValue<'a> {
     /// Try to interpret this value as string.
     ///
     /// Returns None if the type is not a (byte) string or the bytes are not valid UTF-8.
-    pub fn as_str(&self) -> Option<Cow<str>> {
+    pub fn as_str(&self) -> Option<&'a str> {
         let decoded = self.decoded()?;
         let tag = decoded.tag();
-        match self.plain() {
-            Str(s) => Some(Cow::Borrowed(*s)),
+        match self.kind {
+            Str(s) => Some(s),
             Bytes(b) if tag != Some(TAG_BIGNUM_POS) && tag != Some(TAG_BIGNUM_NEG) => {
-                std::str::from_utf8(b).ok().map(Cow::Borrowed)
+                std::str::from_utf8(b).ok()
             }
-            _ => None,
-        }
-    }
-
-    pub fn as_composite(&self) -> Option<Cbor<'a>> {
-        match self.decoded()? {
-            Tagged(_, Composite(c)) => Some(c),
-            Plain(Composite(c)) => Some(c),
             _ => None,
         }
     }

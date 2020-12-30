@@ -27,6 +27,8 @@ pub const LIT_FALSE: u8 = 20;
 pub const LIT_TRUE: u8 = 21;
 pub const LIT_NULL: u8 = 22;
 pub const LIT_UNDEFINED: u8 = 23;
+pub const LIT_SIMPLE: u8 = 24;
+pub const LIT_FLOAT16: u8 = 25;
 pub const LIT_FLOAT32: u8 = 26;
 pub const LIT_FLOAT64: u8 = 27;
 

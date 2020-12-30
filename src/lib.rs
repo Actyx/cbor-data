@@ -33,7 +33,7 @@ mod value;
 pub use builder::{ArrayBuilder, CborBuilder, DictBuilder, WriteToArray, WriteToDict};
 use canonical::canonicalise;
 pub use reader::Literal;
-pub use value::{CborValue, TaggedValue};
+pub use value::{CborValue, ValueKind};
 
 use constants::{MAJOR_ARRAY, MAJOR_DICT, MAJOR_TAG};
 use reader::{integer, major, ptr, tagged_value};
@@ -96,7 +96,7 @@ impl<'a> Cbor<'a> {
     }
 
     /// Extract the single value represented by this piece of CBOR
-    pub fn value(&self) -> Option<TaggedValue<'a>> {
+    pub fn value(&self) -> Option<CborValue<'a>> {
         tagged_value(self.as_slice())
     }
 
@@ -104,14 +104,14 @@ impl<'a> Cbor<'a> {
     ///
     /// The empty string will yield the same as calling [`value()`](#method.value). If path elements
     /// may contain `.` then use [`index_iter()`](#method.index_iter).
-    pub fn index(&self, path: &str) -> Option<TaggedValue<'a>> {
+    pub fn index(&self, path: &str) -> Option<CborValue<'a>> {
         ptr(self.as_slice(), path.split_terminator('.'))
     }
 
     /// Extract a value by indexing into arrays and dicts, with path elements yielded by an iterator.
     ///
     /// The empty iterator will yield the same as calling [`value()`](#method.value).
-    pub fn index_iter<'b>(&self, path: impl Iterator<Item = &'b str>) -> Option<TaggedValue<'a>> {
+    pub fn index_iter<'b>(&self, path: impl Iterator<Item = &'b str>) -> Option<CborValue<'a>> {
         ptr(self.as_slice(), path)
     }
 
@@ -121,7 +121,7 @@ impl<'a> Cbor<'a> {
         let mut bytes = self.as_slice();
         while major(bytes) == Some(MAJOR_TAG) {
             bytes = match integer(bytes) {
-                Some((_, r)) => r,
+                Some((_, _, r)) => r,
                 None => return false,
             };
         }
@@ -134,7 +134,7 @@ impl<'a> Cbor<'a> {
         let mut bytes = self.as_slice();
         while major(bytes) == Some(MAJOR_TAG) {
             bytes = match integer(bytes) {
-                Some((_, r)) => r,
+                Some((_, _, r)) => r,
                 None => return false,
             };
         }
@@ -191,7 +191,7 @@ impl CborOwned {
     }
 
     /// Extract the single value represented by this piece of CBOR
-    pub fn value(&self) -> Option<TaggedValue> {
+    pub fn value(&self) -> Option<CborValue> {
         self.borrow().value()
     }
 
@@ -199,14 +199,14 @@ impl CborOwned {
     ///
     /// The empty string will yield the same as calling [`value()`](#method.value). If path elements
     /// may contain `.` then use [`index_iter()`](#method.index_iter).
-    pub fn index(&self, path: &str) -> Option<TaggedValue> {
+    pub fn index(&self, path: &str) -> Option<CborValue> {
         self.borrow().index(path)
     }
 
     /// Extract a value by indexing into arrays and dicts, with path elements yielded by an iterator.
     ///
     /// The empty iterator will yield the same as calling [`value()`](#method.value).
-    pub fn index_iter<'b>(&self, path: impl Iterator<Item = &'b str>) -> Option<TaggedValue> {
+    pub fn index_iter<'b>(&self, path: impl Iterator<Item = &'b str>) -> Option<CborValue> {
         self.borrow().index_iter(path)
     }
 }
@@ -223,28 +223,31 @@ mod tests {
     use crate::{
         builder::{WriteToArray, WriteToDict},
         constants::*,
-        value::{CborValue::*, TaggedValue::*},
+        value::{CborValue, ValueKind::*},
     };
 
     #[test]
     fn roundtrip_simple() {
         let pos = CborBuilder::new().write_pos(42, Some(56));
-        assert_eq!(pos.value(), Some(Tagged(56, Pos(42))));
+        assert_eq!(pos.value(), Some(CborValue::fake(Some(56), Pos(42))));
 
         let neg = CborBuilder::new().write_neg(42, Some(56));
-        assert_eq!(neg.value(), Some(Tagged(56, Neg(42))));
+        assert_eq!(neg.value(), Some(CborValue::fake(Some(56), Neg(42))));
 
         let bool = CborBuilder::new().write_bool(true, None);
-        assert_eq!(bool.value(), Some(Plain(Bool(true))));
+        assert_eq!(bool.value(), Some(CborValue::fake(None, Bool(true))));
 
         let null = CborBuilder::new().write_null(Some(314));
-        assert_eq!(null.value(), Some(Tagged(314, Null)));
+        assert_eq!(null.value(), Some(CborValue::fake(Some(314), Null)));
 
         let string = CborBuilder::new().write_str("huhu", Some(TAG_CBOR_MARKER));
-        assert_eq!(string.value(), Some(Tagged(55799, Str("huhu"))));
+        assert_eq!(
+            string.value(),
+            Some(CborValue::fake(Some(55799), Str("huhu")))
+        );
 
         let bytes = CborBuilder::new().write_bytes(b"abcd", None);
-        assert_eq!(bytes.value(), Some(Plain(Bytes(b"abcd"))));
+        assert_eq!(bytes.value(), Some(CborValue::fake(None, Bytes(b"abcd"))));
     }
 
     #[test]
@@ -266,36 +269,28 @@ mod tests {
 
         let complex = array.finish();
 
-        let mut dict = CborBuilder::new().write_dict(None);
-        dict.write_neg("a", 666, None);
-        dict.write_bytes("b", b"defdef", None);
-        let the_dict = dict.finish();
-
-        let mut array = CborBuilder::new().write_array(None);
-        array.write_bool(false, None);
-        array.write_str("hello", None);
-        let the_array = array.finish();
-
-        let value = complex.value().unwrap().as_composite().unwrap().to_owned();
         assert_eq!(
             complex.index(""),
-            Some(Tagged(TAG_BIGDECIMAL, Composite(value.borrow())))
+            Some(CborValue::fake(Some(TAG_BIGDECIMAL), Array))
         );
         assert_eq!(complex.index("a"), None);
-        assert_eq!(complex.index("0"), Some(Plain(Pos(5))));
+        assert_eq!(complex.index("0"), Some(CborValue::fake(None, Pos(5))));
+        assert_eq!(complex.index("1"), Some(CborValue::fake(None, Dict)));
+        assert_eq!(complex.index("1.a"), Some(CborValue::fake(None, Neg(666))));
         assert_eq!(
-            complex.index("1"),
-            Some(Plain(Composite(the_dict.borrow())))
+            complex.index("1.b"),
+            Some(CborValue::fake(None, Bytes(b"defdef")))
         );
-        assert_eq!(complex.index("1.a"), Some(Plain(Neg(666))));
-        assert_eq!(complex.index("1.b"), Some(Plain(Bytes(b"defdef"))));
+        assert_eq!(complex.index("2"), Some(CborValue::fake(None, Array)));
         assert_eq!(
-            complex.index("2"),
-            Some(Plain(Composite(the_array.borrow())))
+            complex.index("2.0"),
+            Some(CborValue::fake(None, Bool(false)))
         );
-        assert_eq!(complex.index("2.0"), Some(Plain(Bool(false))));
-        assert_eq!(complex.index("2.1"), Some(Plain(Str("hello"))));
-        assert_eq!(complex.index("3"), Some(Tagged(12345, Null)));
+        assert_eq!(
+            complex.index("2.1"),
+            Some(CborValue::fake(None, Str("hello")))
+        );
+        assert_eq!(complex.index("3"), Some(CborValue::fake(Some(12345), Null)));
     }
 
     #[test]
@@ -305,23 +300,24 @@ mod tests {
             b'd', b'e', b'f', 0x82, 0xf4, 0x65, b'h', b'e', b'l', b'l', b'o', 0xd9, 48, 57, 0xf6,
         ];
         let complex = CborOwned::canonical(&*bytes, None).unwrap();
-        let the_dict = CborOwned::canonical(&bytes[3..18], None).unwrap();
-        let the_array = CborOwned::canonical(&bytes[18..26], None).unwrap();
 
         assert_eq!(complex.index("a"), None);
-        assert_eq!(complex.index("0"), Some(Plain(Pos(5))));
+        assert_eq!(complex.index("0"), Some(CborValue::fake(None, Pos(5))));
+        assert_eq!(complex.index("1"), Some(CborValue::fake(None, Dict)));
+        assert_eq!(complex.index("1.a"), Some(CborValue::fake(None, Neg(666))));
         assert_eq!(
-            complex.index("1"),
-            Some(Plain(Composite(the_dict.borrow())))
+            complex.index("1.b"),
+            Some(CborValue::fake(None, Bytes(b"defdef")))
         );
-        assert_eq!(complex.index("1.a"), Some(Plain(Neg(666))));
-        assert_eq!(complex.index("1.b"), Some(Plain(Bytes(b"defdef"))));
+        assert_eq!(complex.index("2"), Some(CborValue::fake(None, Array)));
         assert_eq!(
-            complex.index("2"),
-            Some(Plain(Composite(the_array.borrow())))
+            complex.index("2.0"),
+            Some(CborValue::fake(None, Bool(false)))
         );
-        assert_eq!(complex.index("2.0"), Some(Plain(Bool(false))));
-        assert_eq!(complex.index("2.1"), Some(Plain(Str("hello"))));
-        assert_eq!(complex.index("3"), Some(Tagged(12345, Null)));
+        assert_eq!(
+            complex.index("2.1"),
+            Some(CborValue::fake(None, Str("hello")))
+        );
+        assert_eq!(complex.index("3"), Some(CborValue::fake(Some(12345), Null)));
     }
 }
