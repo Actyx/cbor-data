@@ -126,11 +126,37 @@ impl<'a> CborBuilder<'a> {
         ArrayBuilder(self.0, Box::new(finish_cbor))
     }
 
+    pub fn write_array_rec(
+        mut self,
+        tag: Option<u64>,
+        f: &mut dyn FnMut(&mut dyn WriteToArray),
+    ) -> CborOwned {
+        let mut v = self.0.as_mut();
+        write_tag(v, tag);
+        write_indefinite(v, MAJOR_ARRAY);
+        f(&mut v);
+        v.push(STOP_BYTE);
+        finish_cbor(self.0)
+    }
+
     /// Write a top-level dict that is then filled by the returned builder.
     pub fn write_dict(mut self, tag: Option<u64>) -> DictBuilder<'a, CborOwned> {
         write_tag(self.0.as_mut(), tag);
         write_indefinite(self.0.as_mut(), MAJOR_DICT);
         DictBuilder(self.0, Box::new(finish_cbor))
+    }
+
+    pub fn write_dict_rec(
+        mut self,
+        tag: Option<u64>,
+        f: &mut dyn FnMut(&mut dyn WriteToDict),
+    ) -> CborOwned {
+        let mut v = self.0.as_mut();
+        write_tag(v, tag);
+        write_indefinite(v, MAJOR_DICT);
+        f(&mut v);
+        v.push(STOP_BYTE);
+        finish_cbor(self.0)
     }
 }
 

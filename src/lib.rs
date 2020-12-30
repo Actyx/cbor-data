@@ -17,7 +17,7 @@
 //! them.
 //!
 //! Regarding the interpretation of parsed data you have the option of inspecting the particular
-//! encoding (by pattern matching on [`TaggedValue`](struct.TaggedValue)) or extracting the information
+//! encoding (by pattern matching on [`CborValue`](struct.CborValue)) or extracting the information
 //! you need using the API methods. In the latter case, many binary representations may yield the
 //! same value, e.g. when asking for an integer the result may stem from a non-optimal encoding
 //! (like writing 57 as 64-bit value) or from a BigDecimal with mantissa 570 and exponent -1.
@@ -91,6 +91,7 @@ impl<'a> AsRef<[u8]> for Cbor<'a> {
 }
 
 impl<'a> Cbor<'a> {
+    /// A view onto the underlying bytes
     pub fn as_slice(&self) -> &'a [u8] {
         self.0
     }
@@ -111,8 +112,8 @@ impl<'a> Cbor<'a> {
     /// Extract a value by indexing into arrays and dicts, with path elements yielded by an iterator.
     ///
     /// The empty iterator will yield the same as calling [`value()`](#method.value).
-    pub fn index_iter<'b>(&self, path: impl Iterator<Item = &'b str>) -> Option<CborValue<'a>> {
-        ptr(self.as_slice(), path)
+    pub fn index_iter<'b>(&self, path: impl IntoIterator<Item = &'b str>) -> Option<CborValue<'a>> {
+        ptr(self.as_slice(), path.into_iter())
     }
 
     /// Check if this CBOR contains an array as its top-level item.
@@ -186,11 +187,12 @@ impl CborOwned {
         Cbor::trusting(self.as_ref())
     }
 
+    /// A view onto the underlying bytes.
     pub fn as_slice(&self) -> &[u8] {
         self.0.as_slice()
     }
 
-    /// Extract the single value represented by this piece of CBOR
+    /// Extract the single value represented by this piece of CBOR.
     pub fn value(&self) -> Option<CborValue> {
         self.borrow().value()
     }
@@ -206,7 +208,7 @@ impl CborOwned {
     /// Extract a value by indexing into arrays and dicts, with path elements yielded by an iterator.
     ///
     /// The empty iterator will yield the same as calling [`value()`](#method.value).
-    pub fn index_iter<'b>(&self, path: impl Iterator<Item = &'b str>) -> Option<CborValue> {
+    pub fn index_iter<'b>(&self, path: impl IntoIterator<Item = &'b str>) -> Option<CborValue> {
         self.borrow().index_iter(path)
     }
 }

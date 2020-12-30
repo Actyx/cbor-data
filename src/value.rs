@@ -55,7 +55,7 @@ impl<'a> CborValue<'a> {
     }
 
     /// strip off wrappers of CBOR encoded item
-    fn decoded(&self) -> Option<Self> {
+    pub fn decoded(&self) -> Option<Self> {
         if let (Some(TAG_CBOR_ITEM), Bytes(b)) = (self.tag(), &self.kind) {
             tagged_value(b)?.decoded()
         } else {

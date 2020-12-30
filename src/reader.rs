@@ -239,15 +239,13 @@ pub fn tagged_value(bytes: &[u8]) -> Option<CborValue> {
     Some(CborValue { tag, kind, bytes })
 }
 
-// TODO index through CBOR encoded items
 pub fn ptr<'b>(mut bytes: &[u8], mut path: impl Iterator<Item = &'b str>) -> Option<CborValue> {
     match path.next() {
         Some(p) => {
-            while major(bytes)? == MAJOR_TAG {
-                bytes = integer(bytes)?.2;
-            }
-            match major(bytes)? {
-                MAJOR_ARRAY => {
+            let v = tagged_value(bytes)?.decoded()?;
+            bytes = v.bytes;
+            match v.kind {
+                Array => {
                     let mut idx = u64::from_str(p).ok()?;
                     let (len, _, mut rest) = integer(bytes).or_else(|| indefinite(bytes))?;
                     if len == u64::MAX {
@@ -271,7 +269,7 @@ pub fn ptr<'b>(mut bytes: &[u8], mut path: impl Iterator<Item = &'b str>) -> Opt
                         None
                     }
                 }
-                MAJOR_DICT => {
+                Dict => {
                     let (len, _, mut rest) = integer(bytes).or_else(|| indefinite(bytes))?;
                     if len == u64::MAX {
                         // marker for indefinite size
