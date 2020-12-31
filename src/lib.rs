@@ -1,6 +1,6 @@
 //! A library for using CBOR as in-memory representation for working with dynamically shaped data.
 //!
-//! For the details on the data format see [RFC7049](https://tools.ietf.org/html/rfc7049). It is
+//! For the details on the data format see [RFC 7049](https://tools.ietf.org/html/rfc7049). It is
 //! normally meant to be used as a data interchange format that models a superset of the JSON
 //! features while employing a more compact binary representation. As such, the data representation
 //! is biased towards smaller in-memory size and not towards fastest data access speed.
@@ -26,32 +26,32 @@ use std::fmt::Debug;
 
 mod builder;
 mod canonical;
-mod constants;
+pub mod constants;
 mod reader;
 mod value;
 
 #[cfg(test)]
 mod tests;
 
-pub use builder::{ArrayBuilder, CborBuilder, DictBuilder, WriteToArray, WriteToDict};
+pub use builder::{
+    ArrayBuilder, ArrayWriter, CborBuilder, DictBuilder, DictValueBuilder, DictValueWriter,
+    DictWriter, Encoder,
+};
 use canonical::canonicalise;
 pub use reader::Literal;
-pub use value::{CborValue, ValueKind};
+pub use value::{CborObject, CborValue, ValueKind};
 
 use constants::{MAJOR_ARRAY, MAJOR_DICT, MAJOR_TAG};
 use reader::{integer, major, ptr, tagged_value};
 
-/// Wrapper around some bytes (referenced or owned) that allows parsing as CBOR value.
+/// Wrapper around a byte slice that allows parsing as CBOR value.
 ///
-/// For details on the format see [RFC7049](https://tools.ietf.org/html/rfc7049).
+/// For details on the format see [RFC 7049](https://tools.ietf.org/html/rfc7049).
 ///
 /// When interpreting CBOR messages from the outside (e.g. from the network) it is
-/// advisable to ingest those using the [`canonical`](#method.canonical) constructor.
+/// advisable to ingest those using the [`CborOwned::canonical`](struct.CborOwned#method.canonical) constructor.
 /// In case the message was encoded for example using [`CborBuilder`](./struct.CborBuilder.html)
 /// it is sufficient to use the [`trusting`](#method.trusting) constructor.
-///
-/// Canonicalisation rqeuires an intermediary data buffer, which can be supplied (and reused)
-/// by the caller to save on allocations.
 #[derive(PartialEq)]
 pub struct Cbor<'a>(&'a [u8]);
 
@@ -152,6 +152,17 @@ impl<'a> Cbor<'a> {
     }
 }
 
+/// Wrapper around a vector of bytes, for parsing as CBOR.
+///
+/// For details on the format see [RFC 7049](https://tools.ietf.org/html/rfc7049).
+///
+/// When interpreting CBOR messages from the outside (e.g. from the network) it is
+/// advisable to ingest those using the [`canonical`](#method.canonical) constructor.
+/// In case the message was encoded for example using [`CborBuilder`](./struct.CborBuilder.html)
+/// it is sufficient to use the [`trusting`](#method.trusting) constructor.
+///
+/// Canonicalisation rqeuires an intermediary data buffer, which can be supplied (and reused)
+/// by the caller to save on allocations.
 #[derive(PartialEq, Clone)]
 pub struct CborOwned(Vec<u8>);
 

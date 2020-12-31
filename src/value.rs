@@ -6,6 +6,9 @@ use crate::{
     Cbor,
 };
 
+/// Lifted navigation structure for a CborValue.
+///
+/// You can obtain this using [`CborValue::as_object()`](struct.CborValue#method.as_object).
 #[derive(Debug, Clone, PartialEq)]
 pub enum CborObject<'a> {
     Array(Vec<CborObject<'a>>),
@@ -23,7 +26,7 @@ impl<'a> CborObject<'a> {
     }
 }
 
-/// Low-level decoded form of a CBOR item. Use TaggedValue for inspecting values.
+/// Low-level decoded form of a CBOR item. Use CborValue for inspecting values.
 ///
 /// Beware of the `Neg` variant, which carries `-1 - x`.
 ///

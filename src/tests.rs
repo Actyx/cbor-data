@@ -3,7 +3,6 @@ use std::str::from_utf8;
 use maplit::btreemap;
 
 use crate::{
-    builder::{WriteToArray, WriteToDict},
     constants::*,
     value::{CborObject, CborValue, ValueKind::*},
     CborBuilder, CborOwned, ValueKind,
@@ -105,7 +104,7 @@ fn canonical() {
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-// Test cases below taken from [RFC7049 Appendix A](https://tools.ietf.org/html/rfc7049#appendix-A)
+// Test cases below taken from [RFC 7049 Appendix A](https://tools.ietf.org/html/rfc7049#appendix-A)
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 fn str_to_cbor(s: &str, trusting: bool) -> CborOwned {

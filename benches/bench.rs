@@ -11,35 +11,39 @@ fn name() -> String {
 }
 
 fn create_cbor() -> CborOwned {
-    CborBuilder::default().write_dict_rec(None, &mut |b| {
-        b.write_str("type", "WorkStopped", None);
-        b.write_str("byWhom", &*name(), None);
-        b.write_bool("pause", false, None);
-        b.write_array_rec("workers", None, &mut |b| {
-            b.write_str(&*name(), None);
-            b.write_str(&*name(), None);
-            b.write_str(&*name(), None);
-        });
-        b.write_pos("started", random(), None);
-        b.write_pos("stopped", random(), None);
-    })
+    CborBuilder::default()
+        .write_dict_rec(None, |mut b| {
+            b.write_str("type", "WorkStopped", None);
+            b.write_str("byWhom", &*name(), None);
+            b.write_bool("pause", false, None);
+            b.write_array_rec("workers", None, |mut b| {
+                b.write_str(&*name(), None);
+                b.write_str(&*name(), None);
+                b.write_str(&*name(), None);
+            });
+            b.write_pos("started", random(), None);
+            b.write_pos("stopped", random(), None);
+        })
+        .0
 }
 
 fn make_new_object(obj: Cbor) -> CborOwned {
-    CborBuilder::default().write_dict_rec(None, &mut |b| {
-        b.write_pos(
-            "start",
-            obj.index("started").unwrap().as_u64().unwrap(),
-            None,
-        );
-        b.write_str("who", obj.index("byWhom").unwrap().as_str().unwrap(), None);
-        b.write_pos(
-            "duration",
-            obj.index("stopped").unwrap().as_u64().unwrap()
-                - obj.index("started").unwrap().as_u64().unwrap(),
-            None,
-        );
-    })
+    CborBuilder::default()
+        .write_dict_rec(None, |mut b| {
+            b.write_pos(
+                "start",
+                obj.index("started").unwrap().as_u64().unwrap(),
+                None,
+            );
+            b.write_str("who", obj.index("byWhom").unwrap().as_str().unwrap(), None);
+            b.write_pos(
+                "duration",
+                obj.index("stopped").unwrap().as_u64().unwrap()
+                    - obj.index("started").unwrap().as_u64().unwrap(),
+                None,
+            );
+        })
+        .0
 }
 
 fn extract(c: &mut Criterion) {
