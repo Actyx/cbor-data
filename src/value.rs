@@ -13,6 +13,16 @@ pub enum CborObject<'a> {
     Value(Option<u64>, ValueKind<'a>),
 }
 
+impl<'a> CborObject<'a> {
+    pub fn depth(&self) -> usize {
+        match self {
+            CborObject::Array(v) => 1 + v.iter().map(|o| o.depth()).max().unwrap_or(1),
+            CborObject::Dict(d) => 1 + d.values().map(|o| o.depth()).max().unwrap_or(1),
+            CborObject::Value(_, _) => 1,
+        }
+    }
+}
+
 /// Low-level decoded form of a CBOR item. Use TaggedValue for inspecting values.
 ///
 /// Beware of the `Neg` variant, which carries `-1 - x`.

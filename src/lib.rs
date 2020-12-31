@@ -28,9 +28,10 @@ mod builder;
 mod canonical;
 mod constants;
 mod reader;
+mod value;
+
 #[cfg(test)]
 mod tests;
-mod value;
 
 pub use builder::{ArrayBuilder, CborBuilder, DictBuilder, WriteToArray, WriteToDict};
 use canonical::canonicalise;

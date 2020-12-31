@@ -33,18 +33,19 @@ pub enum Literal {
     L8(u64),
 }
 
+#[inline]
 pub fn major(bytes: &[u8]) -> Option<u8> {
     Some(*bytes.get(0)? >> 5)
 }
 
 pub fn careful_literal(bytes: &[u8]) -> Option<(Literal, &[u8])> {
-    let (int, _, rest) = integer(bytes)?;
-    match bytes[0] & 31 {
-        24 => Some((Literal::L1(int as u8), rest)),
-        25 => Some((Literal::L2(int as u16), rest)),
-        26 => Some((Literal::L4(int as u32), rest)),
-        27 => Some((Literal::L8(int as u64), rest)),
-        x if x < 24 => Some((Literal::L0(x), rest)),
+    let (int, b, rest) = integer(bytes)?;
+    match b.len() {
+        1 => Some((Literal::L0(int as u8), rest)),
+        2 => Some((Literal::L1(int as u8), rest)),
+        3 => Some((Literal::L2(int as u16), rest)),
+        5 => Some((Literal::L4(int as u32), rest)),
+        9 => Some((Literal::L8(int as u64), rest)),
         _ => None,
     }
 }
@@ -97,6 +98,8 @@ pub fn integer(bytes: &[u8]) -> Option<(u64, &[u8], &[u8])> {
     }
 }
 
+// inline to reuse the bounds check already made by the caller
+#[inline(always)]
 pub fn indefinite(bytes: &[u8]) -> Option<(u64, &[u8], &[u8])> {
     if bytes[0] & 31 == INDEFINITE_SIZE {
         Some((u64::MAX, &bytes[..1], &bytes[1..]))
@@ -238,8 +241,8 @@ fn value(bytes: &[u8]) -> Option<(ValueKind, &[u8], &[u8])> {
 }
 
 pub fn tagged_value(bytes: &[u8]) -> Option<CborValue> {
-    let tag = tag(bytes)?.0;
-    let (kind, bytes, _rest) = value(bytes)?;
+    let (tag, rest) = tag(bytes)?;
+    let (kind, bytes, _rest) = value(rest)?;
     Some(CborValue { tag, kind, bytes })
 }
 
@@ -300,7 +303,7 @@ impl<'a> Iterator for Iter<'a> {
         if *elems == Some(0) || *elems == None && *b.get(0)? == STOP_BYTE {
             None
         } else {
-            let (_kind, _bytes, rest) = value(b)?;
+            let rest = skip(b)?;
             let bytes = &b[..b.len() - rest.len()];
             if let Some(x) = elems.as_mut() {
                 *x -= 1;
