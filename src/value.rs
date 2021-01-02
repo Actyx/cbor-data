@@ -1,8 +1,15 @@
-use std::{borrow::Cow, collections::BTreeMap, convert::TryFrom, iter};
+use std::{
+    borrow::Cow,
+    collections::BTreeMap,
+    convert::TryFrom,
+    fmt::{Display, Formatter},
+    iter,
+};
 
 use crate::{
     constants::*,
-    reader::{indefinite, integer, tagged_value, Iter},
+    reader::{integer, tagged_value, Iter},
+    visit::visit,
     Cbor,
 };
 
@@ -49,6 +56,37 @@ pub enum ValueKind<'a> {
 }
 use ValueKind::*;
 
+impl<'a> Display for ValueKind<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Pos(x) => write!(f, "{}", x),
+            Neg(x) => write!(f, "{}", -1 - (*x as i128)),
+            Float(x) => {
+                if *x == 0f64 && x.is_sign_negative() {
+                    write!(f, "-0.0")
+                } else {
+                    write!(f, "{:?}", x)
+                }
+            }
+            Str(s) => write!(f, "\"{}\"", s.escape_debug()),
+            Bytes(b) => write!(
+                f,
+                "0x{}",
+                b.iter()
+                    .map(|b| format!("{:02x}", b))
+                    .collect::<Vec<_>>()
+                    .join("")
+            ),
+            Bool(b) => write!(f, "{}", b),
+            Null => write!(f, "null"),
+            Undefined => write!(f, "undefined"),
+            Simple(b) => write!(f, "simple({})", b),
+            Array => write!(f, "array"),
+            Dict => write!(f, "dict"),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct Tag<'a> {
     pub tag: u64,
@@ -66,6 +104,60 @@ pub struct CborValue<'a> {
 impl<'a> PartialEq<CborValue<'_>> for CborValue<'a> {
     fn eq(&self, other: &CborValue<'_>) -> bool {
         self.tag() == other.tag() && self.kind == other.kind
+    }
+}
+
+impl<'a> Display for CborValue<'a> {
+    fn fmt(&self, mut f: &mut Formatter<'_>) -> std::fmt::Result {
+        type Res<T> = Result<T, std::fmt::Error>;
+        impl crate::visit::Visitor<std::fmt::Error> for &mut Formatter<'_> {
+            fn visit_simple(&mut self, item: CborValue) -> Res<()> {
+                if let Some(t) = item.tag() {
+                    write!(*self, "{}|", t)?;
+                }
+                write!(*self, "{}", item.kind)
+            }
+            fn visit_array_begin(&mut self, size: Option<u64>, tag: Option<u64>) -> Res<bool> {
+                if let Some(t) = tag {
+                    write!(*self, "{}|", t)?;
+                }
+                write!(*self, "[")?;
+                if size.is_none() {
+                    write!(*self, "_ ")?;
+                }
+                Ok(true)
+            }
+            fn visit_array_index(&mut self, idx: u64) -> Res<bool> {
+                if idx > 0 {
+                    write!(*self, ", ")?;
+                }
+                Ok(true)
+            }
+            fn visit_array_end(&mut self) -> Res<()> {
+                write!(*self, "]")
+            }
+            fn visit_dict_begin(&mut self, size: Option<u64>, tag: Option<u64>) -> Res<bool> {
+                if let Some(t) = tag {
+                    write!(*self, "{}|", t)?;
+                }
+                write!(*self, "{{")?;
+                if size.is_none() {
+                    write!(*self, "_ ")?;
+                }
+                Ok(true)
+            }
+            fn visit_dict_key(&mut self, key: &str, is_first: bool) -> Res<bool> {
+                if !is_first {
+                    write!(*self, ", ")?;
+                }
+                write!(*self, "\"{}\": ", key.escape_debug())?;
+                Ok(true)
+            }
+            fn visit_dict_end(&mut self) -> Res<()> {
+                write!(*self, "}}")
+            }
+        }
+        visit(&mut f, self.clone())
     }
 }
 
@@ -196,8 +288,9 @@ impl<'a> CborValue<'a> {
         let decoded = self.decoded()?;
         match decoded.kind {
             Array => {
-                let (len, _bytes, rest) =
-                    integer(decoded.bytes).or_else(|| indefinite(decoded.bytes))?;
+                let info = integer(decoded.bytes);
+                let rest = info.map(|x| x.2).unwrap_or_else(|| &decoded.bytes[1..]);
+                let len = info.map(|x| x.0);
                 let iter = Iter::new(rest, len);
                 let mut v = Vec::new();
                 for i in iter {
@@ -206,11 +299,9 @@ impl<'a> CborValue<'a> {
                 Some(CborObject::Array(v))
             }
             Dict => {
-                let (mut len, _bytes, rest) =
-                    integer(decoded.bytes).or_else(|| indefinite(decoded.bytes))?;
-                if len != u64::MAX {
-                    len *= 2;
-                }
+                let info = integer(decoded.bytes);
+                let rest = info.map(|x| x.2).unwrap_or_else(|| &decoded.bytes[1..]);
+                let len = info.map(|x| x.0 * 2);
                 let mut iter = Iter::new(rest, len);
                 let mut m = BTreeMap::new();
                 while let Some(c) = iter.next() {

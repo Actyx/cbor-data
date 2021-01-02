@@ -22,13 +22,14 @@
 //! same value, e.g. when asking for an integer the result may stem from a non-optimal encoding
 //! (like writing 57 as 64-bit value) or from a BigDecimal with mantissa 570 and exponent -1.
 
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 
 mod builder;
 mod canonical;
 pub mod constants;
 mod reader;
 mod value;
+mod visit;
 
 #[cfg(test)]
 mod tests;
@@ -37,12 +38,13 @@ pub use builder::{
     ArrayBuilder, ArrayWriter, CborBuilder, DictBuilder, DictValueBuilder, DictValueWriter,
     DictWriter, Encoder,
 };
-use canonical::canonicalise;
 pub use reader::Literal;
 pub use value::{CborObject, CborValue, ValueKind};
+pub use visit::Visitor;
 
-use constants::{MAJOR_ARRAY, MAJOR_DICT, MAJOR_TAG};
-use reader::{integer, major, ptr, tagged_value};
+use canonical::canonicalise;
+use reader::{ptr, tagged_value};
+use visit::visit;
 
 /// Wrapper around a byte slice that allows parsing as CBOR value.
 ///
@@ -66,6 +68,16 @@ impl<'a> Debug for Cbor<'a> {
                 .collect::<Vec<_>>()
                 .join(" ")
         )
+    }
+}
+
+impl<'a> Display for Cbor<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(v) = self.value() {
+            write!(f, "{}", v)
+        } else {
+            write!(f, "invalid CBOR")
+        }
     }
 }
 
@@ -125,30 +137,16 @@ impl<'a> Cbor<'a> {
         ptr(self.as_slice(), path.into_iter())
     }
 
-    /// Check if this CBOR contains an array as its top-level item.
-    /// Returns false also in case of data format problems.
-    pub fn is_array(&self) -> bool {
-        let mut bytes = self.as_slice();
-        while major(bytes) == Some(MAJOR_TAG) {
-            bytes = match integer(bytes) {
-                Some((_, _, r)) => r,
-                None => return false,
-            };
+    /// Visit the interesting parts of this CBOR item as guided by the given
+    /// [`Visitor`](trait.Visitor).
+    ///
+    /// Returns `false` if the visit was not even begun due to invalid or non-canonical CBOR.
+    pub fn visit<Err, V: Visitor<Err>>(&self, visitor: &mut V) -> Result<bool, Err> {
+        if let Some(value) = self.value() {
+            visit(visitor, value).map(|_| true)
+        } else {
+            Ok(false)
         }
-        major(bytes) == Some(MAJOR_ARRAY)
-    }
-
-    /// Check if this CBOR contains an dict as its top-level item.
-    /// Returns false also in case of data format problems.
-    pub fn is_dict(&self) -> bool {
-        let mut bytes = self.as_slice();
-        while major(bytes) == Some(MAJOR_TAG) {
-            bytes = match integer(bytes) {
-                Some((_, _, r)) => r,
-                None => return false,
-            };
-        }
-        major(bytes) == Some(MAJOR_DICT)
     }
 }
 
@@ -168,7 +166,13 @@ pub struct CborOwned(Vec<u8>);
 
 impl Debug for CborOwned {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Cbor::trusting(&*self.0).fmt(f)
+        write!(f, "{:?}", Cbor::trusting(&*self.0))
+    }
+}
+
+impl Display for CborOwned {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", Cbor::trusting(&*self.0))
     }
 }
 
@@ -230,6 +234,18 @@ impl CborOwned {
     /// The empty iterator will yield the same as calling [`value()`](#method.value).
     pub fn index_iter<'b>(&self, path: impl IntoIterator<Item = &'b str>) -> Option<CborValue> {
         self.borrow().index_iter(path)
+    }
+
+    /// Visit the interesting parts of this CBOR item as guided by the given
+    /// [`Visitor`](trait.Visitor).
+    ///
+    /// Returns `false` if the visit was not even begun due to invalid or non-canonical CBOR.
+    pub fn visit<Err, V: Visitor<Err>>(&self, visitor: &mut V) -> Result<bool, Err> {
+        if let Some(value) = self.value() {
+            visit(visitor, value).map(|_| true)
+        } else {
+            Ok(false)
+        }
     }
 }
 

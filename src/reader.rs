@@ -254,16 +254,20 @@ pub fn ptr<'b>(mut bytes: &[u8], mut path: impl Iterator<Item = &'b str>) -> Opt
             match v.kind {
                 Array => {
                     let idx = u64::from_str(p).ok()?;
-                    let (len, _, rest) = integer(bytes).or_else(|| indefinite(bytes))?;
+
+                    let info = integer(bytes);
+                    let rest = info.map(|x| x.2).unwrap_or_else(|| &bytes[1..]);
+                    let len = info.map(|x| x.0);
                     let mut iter = Iter::new(rest, len);
+
                     ptr(iter.nth(idx as usize)?.as_slice(), path)
                 }
                 Dict => {
-                    let (mut len, _, rest) = integer(bytes).or_else(|| indefinite(bytes))?;
-                    if len != u64::MAX {
-                        len *= 2;
-                    }
+                    let info = integer(bytes);
+                    let rest = info.map(|x| x.2).unwrap_or_else(|| &bytes[1..]);
+                    let len = info.map(|x| x.0 * 2);
                     let mut iter = Iter::new(rest, len);
+
                     while let Some(key) = iter.next() {
                         if let Str(s) = value(key.as_slice())?.0 {
                             let v = iter.next()?;
@@ -286,12 +290,8 @@ pub fn ptr<'b>(mut bytes: &[u8], mut path: impl Iterator<Item = &'b str>) -> Opt
 pub struct Iter<'a>(&'a [u8], Option<u64>);
 
 impl<'a> Iter<'a> {
-    pub(crate) fn new(bytes: &'a [u8], len: u64) -> Self {
-        if len == u64::MAX {
-            Self(bytes, None)
-        } else {
-            Self(bytes, Some(len))
-        }
+    pub(crate) fn new(bytes: &'a [u8], len: Option<u64>) -> Self {
+        Self(bytes, len)
     }
 }
 
