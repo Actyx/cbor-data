@@ -34,11 +34,11 @@ pub enum Literal {
 }
 
 #[inline]
-pub fn major(bytes: &[u8]) -> Option<u8> {
+pub(crate) fn major(bytes: &[u8]) -> Option<u8> {
     Some(*bytes.get(0)? >> 5)
 }
 
-pub fn careful_literal(bytes: &[u8]) -> Option<(Literal, &[u8])> {
+pub(crate) fn careful_literal(bytes: &[u8]) -> Option<(Literal, &[u8])> {
     let (int, b, rest) = integer(bytes)?;
     match b.len() {
         1 => Some((Literal::L0(int as u8), rest)),
@@ -50,7 +50,7 @@ pub fn careful_literal(bytes: &[u8]) -> Option<(Literal, &[u8])> {
     }
 }
 
-pub fn integer(bytes: &[u8]) -> Option<(u64, &[u8], &[u8])> {
+pub(crate) fn integer(bytes: &[u8]) -> Option<(u64, &[u8], &[u8])> {
     match bytes[0] & 31 {
         // fun fact: explicit bounds checks make the code a lot smaller and faster because
         // otherwise the panic’s line number dictates a separate check for each array access
@@ -100,7 +100,7 @@ pub fn integer(bytes: &[u8]) -> Option<(u64, &[u8], &[u8])> {
 
 // inline to reuse the bounds check already made by the caller
 #[inline(always)]
-pub fn indefinite(bytes: &[u8]) -> Option<(u64, &[u8], &[u8])> {
+pub(crate) fn indefinite(bytes: &[u8]) -> Option<(u64, &[u8], &[u8])> {
     if bytes[0] & 31 == INDEFINITE_SIZE {
         Some((u64::MAX, &bytes[..1], &bytes[1..]))
     } else {
@@ -108,7 +108,7 @@ pub fn indefinite(bytes: &[u8]) -> Option<(u64, &[u8], &[u8])> {
     }
 }
 
-pub fn value_bytes(bytes: &[u8], skip: bool) -> Option<(Cow<[u8]>, &[u8])> {
+pub(crate) fn value_bytes(bytes: &[u8], skip: bool) -> Option<(Cow<[u8]>, &[u8])> {
     let m = major(bytes)?;
     let (len, _, mut rest) = integer(bytes).or_else(|| indefinite(bytes))?;
     if len == u64::MAX {
@@ -197,7 +197,7 @@ fn skip(bytes: &[u8]) -> Option<&[u8]> {
     }
 }
 
-pub fn tag(mut bytes: &[u8]) -> Option<(Option<Tag>, &[u8])> {
+pub(crate) fn tag(mut bytes: &[u8]) -> Option<(Option<Tag>, &[u8])> {
     let mut tag = None;
     while major(bytes)? == MAJOR_TAG {
         let (v, b, r) = integer(bytes)?;
@@ -207,46 +207,65 @@ pub fn tag(mut bytes: &[u8]) -> Option<(Option<Tag>, &[u8])> {
     Some((tag, bytes))
 }
 
-fn value(bytes: &[u8]) -> Option<(ValueKind, &[u8], &[u8])> {
+pub(crate) enum ValueResult<'a> {
+    V(ValueKind<'a>),
+    S(String),
+    B(Vec<u8>),
+}
+
+pub(crate) fn value(bytes: &[u8]) -> Option<(ValueResult, &[u8], &[u8])> {
+    use ValueResult::*;
+
     match major(bytes)? {
-        MAJOR_POS => integer(bytes).map(|(k, b, r)| (Pos(k), b, r)),
-        MAJOR_NEG => integer(bytes).map(|(k, b, r)| (Neg(k), b, r)),
+        MAJOR_POS => integer(bytes).map(|(k, b, r)| (V(Pos(k)), b, r)),
+        MAJOR_NEG => integer(bytes).map(|(k, b, r)| (V(Neg(k)), b, r)),
         MAJOR_BYTES => match value_bytes(bytes, false)? {
             (Cow::Borrowed(s), rest) => {
-                Some((Bytes(s), &bytes[..(bytes.len() - rest.len())], rest))
+                Some((V(Bytes(s)), &bytes[..(bytes.len() - rest.len())], rest))
             }
-            _ => None,
+            (Cow::Owned(s), rest) => Some((B(s), &bytes[..(bytes.len() - rest.len())], rest)),
         },
         MAJOR_STR => match string(bytes)? {
-            (Cow::Borrowed(s), rest) => Some((Str(s), &bytes[..(bytes.len() - rest.len())], rest)),
-            _ => None,
+            (Cow::Borrowed(s), rest) => {
+                Some((V(Str(s)), &bytes[..(bytes.len() - rest.len())], rest))
+            }
+            (Cow::Owned(s), rest) => Some((S(s), &bytes[..(bytes.len() - rest.len())], rest)),
         },
         MAJOR_LIT => match bytes[0] & 31 {
-            LIT_FALSE => Some((Bool(false), &bytes[..1], &bytes[1..])),
-            LIT_TRUE => Some((Bool(true), &bytes[..1], &bytes[1..])),
-            LIT_NULL => Some((Null, &bytes[..1], &bytes[1..])),
-            LIT_UNDEFINED => Some((Undefined, &bytes[..1], &bytes[1..])),
-            LIT_SIMPLE => Some((Simple(bytes[1]), &bytes[..2], &bytes[2..])),
+            LIT_FALSE => Some((V(Bool(false)), &bytes[..1], &bytes[1..])),
+            LIT_TRUE => Some((V(Bool(true)), &bytes[..1], &bytes[1..])),
+            LIT_NULL => Some((V(Null), &bytes[..1], &bytes[1..])),
+            LIT_UNDEFINED => Some((V(Undefined), &bytes[..1], &bytes[1..])),
+            LIT_SIMPLE => Some((V(Simple(bytes[1])), &bytes[..2], &bytes[2..])),
             LIT_FLOAT16 | LIT_FLOAT32 | LIT_FLOAT64 => {
-                float(bytes).map(|(k, b, r)| (Float(k), b, r))
+                float(bytes).map(|(k, b, r)| (V(Float(k)), b, r))
             }
-            x if x < 24 => Some((Simple(x), &bytes[..1], &bytes[1..])),
+            x if x < 24 => Some((V(Simple(x)), &bytes[..1], &bytes[1..])),
             _ => None,
         },
         MAJOR_TAG => integer(bytes).and_then(|(_, _, rest)| value(rest)),
-        MAJOR_ARRAY => skip(bytes).map(|rest| (Array, &bytes[..(bytes.len() - rest.len())], rest)),
-        MAJOR_DICT => skip(bytes).map(|rest| (Dict, &bytes[..(bytes.len() - rest.len())], rest)),
+        MAJOR_ARRAY => {
+            skip(bytes).map(|rest| (V(Array), &bytes[..(bytes.len() - rest.len())], rest))
+        }
+        MAJOR_DICT => skip(bytes).map(|rest| (V(Dict), &bytes[..(bytes.len() - rest.len())], rest)),
         _ => None,
     }
 }
 
-pub fn tagged_value(bytes: &[u8]) -> Option<CborValue> {
+pub(crate) fn tagged_value(bytes: &[u8]) -> Option<CborValue> {
     let (tag, rest) = tag(bytes)?;
     let (kind, bytes, _rest) = value(rest)?;
-    Some(CborValue { tag, kind, bytes })
+    if let ValueResult::V(kind) = kind {
+        Some(CborValue { tag, kind, bytes })
+    } else {
+        None
+    }
 }
 
-pub fn ptr<'b>(mut bytes: &[u8], mut path: impl Iterator<Item = &'b str>) -> Option<CborValue> {
+pub(crate) fn ptr<'b>(
+    mut bytes: &[u8],
+    mut path: impl Iterator<Item = &'b str>,
+) -> Option<CborValue> {
     match path.next() {
         Some(p) => {
             let v = tagged_value(bytes)?.decoded()?;
@@ -269,7 +288,7 @@ pub fn ptr<'b>(mut bytes: &[u8], mut path: impl Iterator<Item = &'b str>) -> Opt
                     let mut iter = Iter::new(rest, len);
 
                     while let Some(key) = iter.next() {
-                        if let Str(s) = value(key.as_slice())?.0 {
+                        if let ValueResult::V(Str(s)) = value(key.as_slice())?.0 {
                             let v = iter.next()?;
                             if s == p {
                                 return ptr(v.as_slice(), path);
@@ -287,7 +306,7 @@ pub fn ptr<'b>(mut bytes: &[u8], mut path: impl Iterator<Item = &'b str>) -> Opt
     }
 }
 
-pub struct Iter<'a>(&'a [u8], Option<u64>);
+pub(crate) struct Iter<'a>(&'a [u8], Option<u64>);
 
 impl<'a> Iter<'a> {
     pub(crate) fn new(bytes: &'a [u8], len: Option<u64>) -> Self {

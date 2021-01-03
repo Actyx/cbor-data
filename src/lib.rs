@@ -124,6 +124,10 @@ impl<'a> Cbor<'a> {
 
     /// Extract a value by indexing into arrays and dicts, with path elements separated by dot.
     ///
+    /// Returns None if an index doesn’t exist or the indexed object is neither an array nor a dict.
+    /// When the object under consideration is an array, the next path element must represent an
+    /// integer number.
+    ///
     /// The empty string will yield the same as calling [`value()`](#method.value). If path elements
     /// may contain `.` then use [`index_iter()`](#method.index_iter).
     pub fn index(&self, path: &str) -> Option<CborValue<'a>> {
@@ -131,6 +135,10 @@ impl<'a> Cbor<'a> {
     }
 
     /// Extract a value by indexing into arrays and dicts, with path elements yielded by an iterator.
+    ///
+    /// Returns None if an index doesn’t exist or the indexed object is neither an array nor a dict.
+    /// When the object under consideration is an array, the next path element must represent an
+    /// integer number.
     ///
     /// The empty iterator will yield the same as calling [`value()`](#method.value).
     pub fn index_iter<'b>(&self, path: impl IntoIterator<Item = &'b str>) -> Option<CborValue<'a>> {
@@ -223,6 +231,10 @@ impl CborOwned {
 
     /// Extract a value by indexing into arrays and dicts, with path elements separated by dot.
     ///
+    /// Returns None if an index doesn’t exist or the indexed object is neither an array nor a dict.
+    /// When the object under consideration is an array, the next path element must represent an
+    /// integer number.
+    ///
     /// The empty string will yield the same as calling [`value()`](#method.value). If path elements
     /// may contain `.` then use [`index_iter()`](#method.index_iter).
     pub fn index(&self, path: &str) -> Option<CborValue> {
@@ -230,6 +242,10 @@ impl CborOwned {
     }
 
     /// Extract a value by indexing into arrays and dicts, with path elements yielded by an iterator.
+    ///
+    /// Returns None if an index doesn’t exist or the indexed object is neither an array nor a dict.
+    /// When the object under consideration is an array, the next path element must represent an
+    /// integer number.
     ///
     /// The empty iterator will yield the same as calling [`value()`](#method.value).
     pub fn index_iter<'b>(&self, path: impl IntoIterator<Item = &'b str>) -> Option<CborValue> {

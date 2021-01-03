@@ -1,9 +1,9 @@
-use std::{borrow::Cow, str::from_utf8};
+use std::borrow::Cow;
 
 use crate::{
     constants::*,
-    reader::{careful_literal, indefinite, integer, major, tag, value_bytes},
-    ArrayWriter, CborBuilder, CborOwned, DictWriter,
+    reader::{careful_literal, indefinite, integer, major, tag, value, value_bytes},
+    ArrayWriter, CborBuilder, CborOwned, CborValue, DictWriter,
 };
 
 pub fn canonicalise(bytes: &[u8], builder: CborBuilder<'_>) -> Option<CborOwned> {
@@ -108,11 +108,27 @@ fn canonicalise_array<'a>(bytes: &'a [u8], mut builder: ArrayWriter) -> Option<&
 }
 
 fn canonicalise_dict<'a>(bytes: &'a [u8], mut builder: DictWriter) -> Option<&'a [u8]> {
-    fn key<'b>(bytes: &mut &'b [u8]) -> Option<Cow<'b, [u8]>> {
-        if major(bytes)? != MAJOR_STR {
-            return None;
+    fn key<'b>(bytes_ref: &mut &'b [u8]) -> Option<Cow<'b, str>> {
+        use crate::reader::ValueResult::*;
+
+        let (tag, rest) = tag(bytes_ref)?;
+        let (value, bytes, rest) = value(rest)?;
+        *bytes_ref = rest;
+        match value {
+            V(kind) => {
+                let value = CborValue { tag, kind, bytes };
+                if let Some(s) = value.as_str() {
+                    return Some(Cow::Borrowed(s));
+                }
+                // FIXME replace by proper Number type once available
+                if let Some(n) = value.as_f64() {
+                    return Some(Cow::Owned(n.to_string()));
+                }
+                None
+            }
+            S(s) => Some(Cow::Owned(s)),
+            B(b) => String::from_utf8(b).ok().map(Cow::Owned),
         }
-        update(bytes, value_bytes(bytes, false))
     }
     fn one(bytes: &mut &[u8], key: &str, builder: &mut DictWriter) -> Option<()> {
         let (tag, b) = tag(bytes)?;
@@ -161,13 +177,13 @@ fn canonicalise_dict<'a>(bytes: &'a [u8], mut builder: DictWriter) -> Option<&'a
         // marker for indefinite size
         while *bytes.get(0)? != STOP_BYTE {
             let key = key(&mut bytes)?;
-            one(&mut bytes, from_utf8(key.as_ref()).ok()?, &mut builder)?;
+            one(&mut bytes, key.as_ref(), &mut builder)?;
         }
         Some(&bytes[1..])
     } else {
         for _ in 0..len {
             let key = key(&mut bytes)?;
-            one(&mut bytes, from_utf8(key.as_ref()).ok()?, &mut builder)?;
+            one(&mut bytes, key.as_ref(), &mut builder)?;
         }
         Some(bytes)
     }

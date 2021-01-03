@@ -408,8 +408,7 @@ fn object() {
     assert_eq!(o(&bytes), Dict(btreemap! {}));
     assert_eq!(bytes.to_string(), "{_ }");
 
-    // original test uses integer keys which we don’t support (0xa201020304)
-    let bytes = str_to_cbor("0xa2613102613304", false);
+    let bytes = str_to_cbor("0xa201020304", false);
     assert_eq!(
         o(&bytes),
         Dict(btreemap! {
@@ -417,6 +416,7 @@ fn object() {
             "3" => Value(None, Pos(4))
         })
     );
+    // note that canonicalisation turns all dict keys into strings
     assert_eq!(bytes.to_string(), r#"{_ "1": 2, "3": 4}"#);
 
     let bytes = str_to_cbor("0xa26161016162820203", false);
