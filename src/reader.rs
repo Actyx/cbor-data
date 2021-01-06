@@ -388,7 +388,7 @@ mod tests {
             let cbor = Cbor::trusting(&*bytes);
             assert_eq!(cbor.value(), None);
 
-            let cbor = CborOwned::canonical(bytes, None).unwrap();
+            let cbor = CborOwned::canonical(bytes).unwrap();
             assert_eq!(cbor.value(), Some(CborValue::fake(None, Str(res))));
         }
     }
@@ -401,7 +401,7 @@ mod tests {
             cbor.value(),
             Some(CborValue::fake(None, Float(1.8319174824118334e-41)))
         );
-        let cbor = CborOwned::canonical(bytes, None).unwrap();
+        let cbor = CborOwned::canonical(bytes).unwrap();
         assert_eq!(
             cbor.value(),
             Some(CborValue::fake(None, Float(1.8319174824118334e-41)))

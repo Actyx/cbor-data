@@ -5,7 +5,7 @@ use maplit::btreemap;
 use crate::{
     constants::*,
     value::{CborObject, CborValue, ValueKind::*},
-    CborBuilder, CborOwned, ValueKind,
+    CborBuilder, CborOwned, ValueKind, Writer,
 };
 
 #[test]
@@ -34,26 +34,22 @@ fn roundtrip_simple() {
 
 #[test]
 fn roundtrip_complex() {
-    let mut array = CborBuilder::new().write_array(Some(TAG_BIGDECIMAL));
-    array.write_pos(5, None);
-
-    let mut dict = array.write_dict(None);
-    dict.write_neg("a", 666, None);
-    dict.write_bytes("b", b"defdef", None);
-    let array = dict.finish();
-
-    let mut array2 = array.write_array(None);
-    array2.write_bool(false, None);
-    array2.write_str("hello", None);
-    let mut array = array2.finish();
-
-    array.write_null(Some(12345));
-
-    let complex = array.finish();
+    let complex = CborBuilder::new().write_array(Some(TAG_BIGDECIMAL), |b| {
+        b.write_pos(5, None);
+        b.write_dict(None, |b| {
+            b.with_key("a", |b| b.write_neg(666, None));
+            b.with_key("b", |b| b.write_bytes(b"defdef", None));
+        });
+        b.write_array(None, |b| {
+            b.write_bool(false, None);
+            b.write_str("hello", None);
+        });
+        b.write_null(Some(12345));
+    });
 
     assert_eq!(
         complex.to_string(),
-        "4|[_ 5, {_ \"a\": -667, \"b\": 0x646566646566}, [_ false, \"hello\"], 12345|null]"
+        "4|[5, {\"a\": -667, \"b\": 0x646566646566}, [false, \"hello\"], 12345|null]"
     );
 
     assert_eq!(
@@ -86,11 +82,11 @@ fn canonical() {
         0xc4u8, 0x84, 5, 0xa2, 0x61, b'a', 0x39, 2, 154, 0x61, b'b', 0x46, b'd', b'e', b'f', b'd',
         b'e', b'f', 0x82, 0xf4, 0x65, b'h', b'e', b'l', b'l', b'o', 0xd9, 48, 57, 0xf6,
     ];
-    let complex = CborOwned::canonical(&*bytes, None).unwrap();
+    let complex = CborOwned::canonical(&*bytes).unwrap();
 
     assert_eq!(
         complex.to_string(),
-        "4|[_ 5, {_ \"a\": -667, \"b\": 0x646566646566}, [_ false, \"hello\"], 12345|null]"
+        "4|[5, {\"a\": -667, \"b\": 0x646566646566}, [false, \"hello\"], 12345|null]"
     );
 
     assert_eq!(complex.index("a"), None);
@@ -117,16 +113,21 @@ fn canonical() {
 // Test cases below taken from [RFC 7049 Appendix A](https://tools.ietf.org/html/rfc7049#appendix-A)
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-fn str_to_cbor(s: &str, trusting: bool) -> CborOwned {
+fn str_to_bytes(s: &str) -> Vec<u8> {
     assert_eq!(&s[..2], "0x");
     let mut v = Vec::new();
     for b in s.as_bytes()[2..].chunks(2) {
         v.push(u8::from_str_radix(from_utf8(b).unwrap(), 16).unwrap());
     }
+    v
+}
+
+fn str_to_cbor(s: &str, trusting: bool) -> CborOwned {
+    let v = str_to_bytes(s);
     if trusting {
         CborOwned::trusting(v)
     } else {
-        CborOwned::canonical(v, None).unwrap()
+        CborOwned::canonical(v).unwrap()
     }
 }
 
@@ -370,7 +371,8 @@ fn object() {
 
     let bytes = str_to_cbor("0x80", false);
     assert_eq!(o(&bytes), Array(vec![]));
-    assert_eq!(bytes.to_string(), "[_ ]");
+    assert_eq!(bytes.to_string(), "[]");
+    assert_eq!(bytes.as_slice(), str_to_bytes("0x80"));
 
     let bytes = str_to_cbor("0x83010203", false);
     assert_eq!(
@@ -381,7 +383,8 @@ fn object() {
             Value(None, Pos(3))
         ])
     );
-    assert_eq!(bytes.to_string(), "[_ 1, 2, 3]");
+    assert_eq!(bytes.to_string(), "[1, 2, 3]");
+    assert_eq!(bytes.as_slice(), str_to_bytes("0x83010203"));
 
     let bytes = str_to_cbor("0x8301820203820405", false);
     assert_eq!(
@@ -392,7 +395,8 @@ fn object() {
             Array(vec![Value(None, Pos(4)), Value(None, Pos(5))]),
         ])
     );
-    assert_eq!(bytes.to_string(), "[_ 1, [_ 2, 3], [_ 4, 5]]");
+    assert_eq!(bytes.to_string(), "[1, [2, 3], [4, 5]]");
+    assert_eq!(bytes.as_slice(), str_to_bytes("0x8301820203820405"));
 
     let bytes = str_to_cbor(
         "0x98190102030405060708090a0b0c0d0e0f101112131415161718181819",
@@ -402,11 +406,16 @@ fn object() {
         o(&bytes),
         Array((1u64..26).map(|i| Value(None, Pos(i))).collect())
     );
-    assert_eq!(bytes.to_string(), "[_ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25]");
+    assert_eq!(bytes.to_string(), "[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25]");
+    assert_eq!(
+        bytes.as_slice(),
+        str_to_bytes("0x98190102030405060708090a0b0c0d0e0f101112131415161718181819")
+    );
 
     let bytes = str_to_cbor("0xa0", false);
     assert_eq!(o(&bytes), Dict(btreemap! {}));
-    assert_eq!(bytes.to_string(), "{_ }");
+    assert_eq!(bytes.to_string(), "{}");
+    assert_eq!(bytes.as_slice(), str_to_bytes("0xa0"));
 
     let bytes = str_to_cbor("0xa201020304", false);
     assert_eq!(
@@ -417,7 +426,8 @@ fn object() {
         })
     );
     // note that canonicalisation turns all dict keys into strings
-    assert_eq!(bytes.to_string(), r#"{_ "1": 2, "3": 4}"#);
+    assert_eq!(bytes.to_string(), r#"{"1": 2, "3": 4}"#);
+    assert_eq!(bytes.as_slice(), str_to_bytes("0xa2613102613304"));
 
     let bytes = str_to_cbor("0xa26161016162820203", false);
     assert_eq!(
@@ -427,7 +437,8 @@ fn object() {
             "b" => Array(vec![Value(None, Pos(2)), Value(None, Pos(3))])
         })
     );
-    assert_eq!(bytes.to_string(), r#"{_ "a": 1, "b": [_ 2, 3]}"#);
+    assert_eq!(bytes.to_string(), r#"{"a": 1, "b": [2, 3]}"#);
+    assert_eq!(bytes.as_slice(), str_to_bytes("0xa26161016162820203"));
 
     let bytes = str_to_cbor("0x826161a161626163", false);
     assert_eq!(
@@ -439,7 +450,8 @@ fn object() {
             })
         ])
     );
-    assert_eq!(bytes.to_string(), r#"[_ "a", {_ "b": "c"}]"#);
+    assert_eq!(bytes.to_string(), r#"["a", {"b": "c"}]"#);
+    assert_eq!(bytes.as_slice(), str_to_bytes("0x826161a161626163"));
 
     let bytes = str_to_cbor("0xa56161614161626142616361436164614461656145", false);
     assert_eq!(
@@ -454,12 +466,17 @@ fn object() {
     );
     assert_eq!(
         bytes.to_string(),
-        r#"{_ "a": "A", "b": "B", "c": "C", "d": "D", "e": "E"}"#
+        r#"{"a": "A", "b": "B", "c": "C", "d": "D", "e": "E"}"#
+    );
+    assert_eq!(
+        bytes.as_slice(),
+        str_to_bytes("0xa56161614161626142616361436164614461656145")
     );
 
     let bytes = str_to_cbor("0x9fff", false);
     assert_eq!(o(&bytes), Array(vec![]));
-    assert_eq!(bytes.to_string(), "[_ ]");
+    assert_eq!(bytes.to_string(), "[]");
+    assert_eq!(bytes.as_slice(), str_to_bytes("0x80"));
 
     let bytes = str_to_cbor("0x9f018202039f0405ffff", false);
     assert_eq!(
@@ -470,7 +487,8 @@ fn object() {
             Array(vec![Value(None, Pos(4)), Value(None, Pos(5))]),
         ])
     );
-    assert_eq!(bytes.to_string(), "[_ 1, [_ 2, 3], [_ 4, 5]]");
+    assert_eq!(bytes.to_string(), "[1, [2, 3], [4, 5]]");
+    assert_eq!(bytes.as_slice(), str_to_bytes("0x8301820203820405"));
 
     let bytes = str_to_cbor("0x9f01820203820405ff", false);
     assert_eq!(
@@ -481,7 +499,8 @@ fn object() {
             Array(vec![Value(None, Pos(4)), Value(None, Pos(5))]),
         ])
     );
-    assert_eq!(bytes.to_string(), "[_ 1, [_ 2, 3], [_ 4, 5]]");
+    assert_eq!(bytes.to_string(), "[1, [2, 3], [4, 5]]");
+    assert_eq!(bytes.as_slice(), str_to_bytes("0x8301820203820405"));
 
     let bytes = str_to_cbor("0x83018202039f0405ff", false);
     assert_eq!(
@@ -492,7 +511,8 @@ fn object() {
             Array(vec![Value(None, Pos(4)), Value(None, Pos(5))]),
         ])
     );
-    assert_eq!(bytes.to_string(), "[_ 1, [_ 2, 3], [_ 4, 5]]");
+    assert_eq!(bytes.to_string(), "[1, [2, 3], [4, 5]]");
+    assert_eq!(bytes.as_slice(), str_to_bytes("0x8301820203820405"));
 
     let bytes = str_to_cbor("0x83019f0203ff820405", false);
     assert_eq!(
@@ -503,7 +523,8 @@ fn object() {
             Array(vec![Value(None, Pos(4)), Value(None, Pos(5))]),
         ])
     );
-    assert_eq!(bytes.to_string(), "[_ 1, [_ 2, 3], [_ 4, 5]]");
+    assert_eq!(bytes.to_string(), "[1, [2, 3], [4, 5]]");
+    assert_eq!(bytes.as_slice(), str_to_bytes("0x8301820203820405"));
 
     let bytes = str_to_cbor(
         "0x9f0102030405060708090a0b0c0d0e0f101112131415161718181819ff",
@@ -513,7 +534,11 @@ fn object() {
         o(&bytes),
         Array((1u64..26).map(|i| Value(None, Pos(i))).collect())
     );
-    assert_eq!(bytes.to_string(), "[_ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25]");
+    assert_eq!(bytes.to_string(), "[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25]");
+    assert_eq!(
+        bytes.as_slice(),
+        str_to_bytes("0x98190102030405060708090a0b0c0d0e0f101112131415161718181819")
+    );
 
     let bytes = str_to_cbor("0xbf61610161629f0203ffff", false);
     assert_eq!(
@@ -523,7 +548,8 @@ fn object() {
             "b" => Array(vec![Value(None, Pos(2)), Value(None, Pos(3))])
         })
     );
-    assert_eq!(bytes.to_string(), r#"{_ "a": 1, "b": [_ 2, 3]}"#);
+    assert_eq!(bytes.to_string(), r#"{"a": 1, "b": [2, 3]}"#);
+    assert_eq!(bytes.as_slice(), str_to_bytes("0xa26161016162820203"));
 
     let bytes = str_to_cbor("0x826161bf61626163ff", false);
     assert_eq!(
@@ -535,7 +561,8 @@ fn object() {
             })
         ])
     );
-    assert_eq!(bytes.to_string(), r#"[_ "a", {_ "b": "c"}]"#);
+    assert_eq!(bytes.to_string(), r#"["a", {"b": "c"}]"#);
+    assert_eq!(bytes.as_slice(), str_to_bytes("0x826161a161626163"));
 
     let bytes = str_to_cbor("0xbf6346756ef563416d7421ff", false);
     assert_eq!(
@@ -545,5 +572,6 @@ fn object() {
             "Amt" => Value(None, Neg(1))
         })
     );
-    assert_eq!(bytes.to_string(), r#"{_ "Fun": true, "Amt": -2}"#);
+    assert_eq!(bytes.to_string(), r#"{"Fun": true, "Amt": -2}"#);
+    assert_eq!(bytes.as_slice(), str_to_bytes("0xa26346756ef563416d7421"));
 }

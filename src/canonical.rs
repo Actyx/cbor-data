@@ -1,12 +1,13 @@
 use std::borrow::Cow;
 
 use crate::{
+    builder::CborOutput,
     constants::*,
     reader::{careful_literal, indefinite, integer, major, tag, value, value_bytes},
-    ArrayWriter, CborBuilder, CborOwned, CborValue, DictWriter,
+    ArrayWriter, CborBuilder, CborValue, DictWriter, Writer,
 };
 
-pub fn canonicalise(bytes: &[u8], builder: CborBuilder<'_>) -> Option<CborOwned> {
+pub fn canonicalise<O: CborOutput>(bytes: &[u8], builder: CborBuilder<'_, O>) -> Option<O::Output> {
     let (tag, bytes) = tag(bytes)?;
     let tag = tag.map(|x| x.tag);
     match major(bytes)? {
@@ -26,11 +27,11 @@ pub fn canonicalise(bytes: &[u8], builder: CborBuilder<'_>) -> Option<CborOwned>
         )),
         // TODO keep definite size arrays definite size if len < 24
         MAJOR_ARRAY => {
-            let (cbor, result) = builder.write_array_rec(tag, |b| canonicalise_array(bytes, b));
+            let (cbor, result) = builder.write_array_ret(tag, |b| canonicalise_array(bytes, b));
             result.map(|_| cbor)
         }
         MAJOR_DICT => {
-            let (cbor, result) = builder.write_dict_rec(tag, |b| canonicalise_dict(bytes, b));
+            let (cbor, result) = builder.write_dict_ret(tag, |b| canonicalise_dict(bytes, b));
             result.map(|_| cbor)
         }
         MAJOR_LIT => Some(builder.write_lit(careful_literal(bytes)?.0, tag)),
@@ -50,13 +51,17 @@ fn update3<'a, T>(b: &mut &'a [u8], val: Option<(T, &'a [u8], &'a [u8])>) -> Opt
     Some(t)
 }
 
-fn canonicalise_array<'a>(bytes: &'a [u8], mut builder: ArrayWriter) -> Option<&'a [u8]> {
+fn canonicalise_array<'a>(bytes: &'a [u8], builder: &mut ArrayWriter) -> Option<&'a [u8]> {
     fn one(bytes: &mut &[u8], builder: &mut ArrayWriter) -> Option<()> {
         let (tag, b) = tag(bytes)?;
         let tag = tag.map(|x| x.tag);
         match major(b)? {
-            MAJOR_POS => builder.write_pos(update3(bytes, integer(b))?, tag),
-            MAJOR_NEG => builder.write_neg(update3(bytes, integer(b))?, tag),
+            MAJOR_POS => {
+                builder.write_pos(update3(bytes, integer(b))?, tag);
+            }
+            MAJOR_NEG => {
+                builder.write_neg(update3(bytes, integer(b))?, tag);
+            }
             MAJOR_BYTES => {
                 if tag == Some(TAG_CBOR_ITEM) {
                     // drop CBOR item encoding wrapper - may choose to use these later for more efficient skipping
@@ -64,28 +69,28 @@ fn canonicalise_array<'a>(bytes: &'a [u8], mut builder: ArrayWriter) -> Option<&
                     // the line above has advanced the main loop’s reference, here we advance a temporary one
                     one(&mut decoded.as_ref(), builder)?
                 } else {
-                    builder.write_bytes(update(bytes, value_bytes(b, false))?.as_ref(), tag)
+                    builder.write_bytes(update(bytes, value_bytes(b, false))?.as_ref(), tag);
                 }
             }
-            MAJOR_STR => builder.write_str(
-                std::str::from_utf8(update(bytes, value_bytes(b, false))?.as_ref()).ok()?,
-                tag,
-            ),
+            MAJOR_STR => {
+                builder.write_str(
+                    std::str::from_utf8(update(bytes, value_bytes(b, false))?.as_ref()).ok()?,
+                    tag,
+                );
+            }
             MAJOR_ARRAY => {
-                let mut res = None;
-                builder.write_array_rec(tag, |builder| {
-                    res = canonicalise_array(b, builder);
-                });
-                *bytes = res?;
+                *bytes = builder
+                    .write_array_ret(tag, |builder| canonicalise_array(b, builder))
+                    .1?;
             }
             MAJOR_DICT => {
-                let mut res = None;
-                builder.write_dict_rec(tag, |builder| {
-                    res = canonicalise_dict(b, builder);
-                });
-                *bytes = res?;
+                *bytes = builder
+                    .write_dict_ret(tag, |builder| canonicalise_dict(b, builder))
+                    .1?;
             }
-            MAJOR_LIT => builder.write_lit(update(bytes, careful_literal(b))?, tag),
+            MAJOR_LIT => {
+                builder.write_lit(update(bytes, careful_literal(b))?, tag);
+            }
             _ => return None,
         }
         Some(())
@@ -96,18 +101,18 @@ fn canonicalise_array<'a>(bytes: &'a [u8], mut builder: ArrayWriter) -> Option<&
     if len == u64::MAX {
         // marker for indefinite size
         while *bytes.get(0)? != STOP_BYTE {
-            one(&mut bytes, &mut builder)?;
+            one(&mut bytes, builder)?;
         }
         Some(&bytes[1..])
     } else {
         for _ in 0..len {
-            one(&mut bytes, &mut builder)?;
+            one(&mut bytes, builder)?;
         }
         Some(bytes)
     }
 }
 
-fn canonicalise_dict<'a>(bytes: &'a [u8], mut builder: DictWriter) -> Option<&'a [u8]> {
+fn canonicalise_dict<'a>(bytes: &'a [u8], builder: &mut DictWriter) -> Option<&'a [u8]> {
     fn key<'b>(bytes_ref: &mut &'b [u8]) -> Option<Cow<'b, str>> {
         use crate::reader::ValueResult::*;
 
@@ -134,8 +139,14 @@ fn canonicalise_dict<'a>(bytes: &'a [u8], mut builder: DictWriter) -> Option<&'a
         let (tag, b) = tag(bytes)?;
         let tag = tag.map(|x| x.tag);
         match major(b)? {
-            MAJOR_POS => builder.write_pos(key, update3(bytes, integer(b))?, tag),
-            MAJOR_NEG => builder.write_neg(key, update3(bytes, integer(b))?, tag),
+            MAJOR_POS => {
+                let pos = update3(bytes, integer(b))?;
+                builder.with_key(key, |b| b.write_pos(pos, tag));
+            }
+            MAJOR_NEG => {
+                let neg = update3(bytes, integer(b))?;
+                builder.with_key(key, |b| b.write_neg(neg, tag));
+            }
             MAJOR_BYTES => {
                 if tag == Some(TAG_CBOR_ITEM) {
                     // drop CBOR item encoding wrapper - may choose to use these later for more efficient skipping
@@ -143,29 +154,39 @@ fn canonicalise_dict<'a>(bytes: &'a [u8], mut builder: DictWriter) -> Option<&'a
                     // the line above has advanced the main loop’s reference, here we advance a temporary one
                     one(&mut decoded.as_ref(), key, builder)?
                 } else {
-                    builder.write_bytes(key, update(bytes, value_bytes(b, false))?.as_ref(), tag)
+                    let value = update(bytes, value_bytes(b, false))?;
+                    builder.with_key(key, |b| b.write_bytes(value.as_ref(), tag));
                 }
             }
-            MAJOR_STR => builder.write_str(
-                key,
-                std::str::from_utf8(update(bytes, value_bytes(b, false))?.as_ref()).ok()?,
-                tag,
-            ),
+            MAJOR_STR => {
+                let value = update(bytes, value_bytes(b, false))?;
+                let value = std::str::from_utf8(value.as_ref()).ok()?;
+                builder.with_key(key, |b| b.write_str(value, tag));
+            }
             MAJOR_ARRAY => {
                 let mut res = None;
-                builder.write_array_rec(key, tag, |builder| {
-                    res = canonicalise_array(b, builder);
+                builder.with_key(key, |bb| {
+                    bb.write_array_ret(tag, |builder| {
+                        res = canonicalise_array(b, builder);
+                    })
+                    .0
                 });
                 *bytes = res?;
             }
             MAJOR_DICT => {
                 let mut res = None;
-                builder.write_dict_rec(key, tag, |builder| {
-                    res = canonicalise_dict(b, builder);
+                builder.with_key(key, |bb| {
+                    bb.write_dict_ret(tag, |builder| {
+                        res = canonicalise_dict(b, builder);
+                    })
+                    .0
                 });
                 *bytes = res?;
             }
-            MAJOR_LIT => builder.write_lit(key, update(bytes, careful_literal(b))?, tag),
+            MAJOR_LIT => {
+                let value = update(bytes, careful_literal(b))?;
+                builder.with_key(key, |b| b.write_lit(value, tag));
+            }
             _ => return None,
         }
         Some(())
@@ -177,13 +198,13 @@ fn canonicalise_dict<'a>(bytes: &'a [u8], mut builder: DictWriter) -> Option<&'a
         // marker for indefinite size
         while *bytes.get(0)? != STOP_BYTE {
             let key = key(&mut bytes)?;
-            one(&mut bytes, key.as_ref(), &mut builder)?;
+            one(&mut bytes, key.as_ref(), builder)?;
         }
         Some(&bytes[1..])
     } else {
         for _ in 0..len {
             let key = key(&mut bytes)?;
-            one(&mut bytes, key.as_ref(), &mut builder)?;
+            one(&mut bytes, key.as_ref(), builder)?;
         }
         Some(bytes)
     }
@@ -192,35 +213,39 @@ fn canonicalise_dict<'a>(bytes: &'a [u8], mut builder: DictWriter) -> Option<&'a
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::value::ValueKind::*;
     use crate::CborValue;
+    use crate::{value::ValueKind::*, CborOwned};
 
     #[test]
     fn remove_cbor_encoding() {
         let item = CborBuilder::default().write_null(None);
         let item_str = CborBuilder::default().write_str("v", None);
         let array = CborBuilder::default()
-            .write_array_rec(None, |mut builder| {
+            .write_array_ret(None, |builder| {
                 builder.write_bytes(item.as_slice(), Some(TAG_CBOR_ITEM));
                 builder.write_bytes(item_str.as_slice(), Some(TAG_CBOR_ITEM));
             })
             .0;
         let dict = CborBuilder::default()
-            .write_dict_rec(None, |mut builder| {
-                builder.write_bytes("a", item.as_slice(), Some(TAG_CBOR_ITEM));
-                builder.write_bytes("b", item_str.as_slice(), Some(TAG_CBOR_ITEM));
+            .write_dict_ret(None, |builder| {
+                builder.with_key("a", |b| b.write_bytes(item.as_slice(), Some(TAG_CBOR_ITEM)));
+                builder.with_key("b", |b| {
+                    b.write_bytes(item_str.as_slice(), Some(TAG_CBOR_ITEM))
+                });
             })
             .0;
         let nested_array = CborBuilder::default()
-            .write_array_rec(None, |mut builder| {
+            .write_array_ret(None, |builder| {
                 builder.write_bytes(array.as_slice(), Some(TAG_CBOR_ITEM));
                 builder.write_bytes(dict.as_slice(), Some(TAG_CBOR_ITEM));
             })
             .0;
         let nested_dict = CborBuilder::default()
-            .write_dict_rec(None, |mut builder| {
-                builder.write_bytes("a", array.as_slice(), Some(TAG_CBOR_ITEM));
-                builder.write_bytes("b", dict.as_slice(), Some(TAG_CBOR_ITEM));
+            .write_dict_ret(None, |builder| {
+                builder.with_key("a", |b| {
+                    b.write_bytes(array.as_slice(), Some(TAG_CBOR_ITEM))
+                });
+                builder.with_key("b", |b| b.write_bytes(dict.as_slice(), Some(TAG_CBOR_ITEM)));
             })
             .0;
         let encoded_array =
@@ -266,18 +291,59 @@ mod tests {
         assert_eq!(d("b.b"), CborValue::fake(None, Str("v")));
 
         assert_eq!(
-            format!(
-                "{:?}",
-                CborOwned::canonical(encoded_array.as_slice(), None).unwrap()
-            ),
+            encoded_array.to_string(),
+            "24|0x82d8184a82d81841f6d818426176d8184ea26161d81841f66162d818426176"
+        );
+
+        let canonical_array = CborOwned::canonical(encoded_array.as_slice()).unwrap();
+        assert_eq!(
+            format!("{:?}", canonical_array),
+            "Cbor(82 82 f6 61 76 a2 61 61 f6 61 62 61 76)".to_owned()
+        );
+        assert_eq!(
+            canonical_array.to_string(),
+            r#"[[null, "v"], {"a": null, "b": "v"}]"#
+        );
+
+        let canonical_array = CborBuilder::new()
+            .with_max_definite_size(None)
+            .write_canonical(encoded_array.as_slice())
+            .unwrap();
+        assert_eq!(
+            format!("{:?}", canonical_array),
             "Cbor(9f 9f f6 61 76 ff bf 61 61 f6 61 62 61 76 ff ff)".to_owned()
         );
         assert_eq!(
-            format!(
-                "{:?}",
-                CborOwned::canonical(encoded_dict.as_slice(), None).unwrap()
-            ),
+            canonical_array.to_string(),
+            r#"[_ [_ null, "v"], {_ "a": null, "b": "v"}]"#
+        );
+
+        assert_eq!(
+            encoded_dict.to_string(),
+            "24|0xa26161d8184a82d81841f6d8184261766162d8184ea26161d81841f66162d818426176"
+        );
+
+        let canonical_dict = CborOwned::canonical(encoded_dict.as_slice()).unwrap();
+        assert_eq!(
+            format!("{:?}", canonical_dict),
+            "Cbor(a2 61 61 82 f6 61 76 61 62 a2 61 61 f6 61 62 61 76)".to_owned()
+        );
+        assert_eq!(
+            canonical_dict.to_string(),
+            r#"{"a": [null, "v"], "b": {"a": null, "b": "v"}}"#
+        );
+
+        let canonical_dict = CborBuilder::new()
+            .with_max_definite_size(None)
+            .write_canonical(encoded_dict.as_slice())
+            .unwrap();
+        assert_eq!(
+            format!("{:?}", canonical_dict),
             "Cbor(bf 61 61 9f f6 61 76 ff 61 62 bf 61 61 f6 61 62 61 76 ff ff)".to_owned()
+        );
+        assert_eq!(
+            canonical_dict.to_string(),
+            r#"{_ "a": [_ null, "v"], "b": {_ "a": null, "b": "v"}}"#
         );
     }
 }

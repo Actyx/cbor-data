@@ -35,8 +35,8 @@ mod visit;
 mod tests;
 
 pub use builder::{
-    ArrayBuilder, ArrayWriter, CborBuilder, DictBuilder, DictValueBuilder, DictValueWriter,
-    DictWriter, Encoder,
+    ArrayWriter, CborBuilder, CborOutput, DictWriter, Encoder, NoOutput, SingleBuilder,
+    SingleResult, WithOutput, Writer,
 };
 pub use reader::Literal;
 pub use value::{CborObject, CborValue, ValueKind};
@@ -203,15 +203,10 @@ impl CborOwned {
     ///  - writing arrays and dicts using indefinite size format
     ///  - writing numbers in their smallest form
     ///
-    /// The used vector can be provided (to reuse previously allocated memory) or newly created. In the former
-    /// case all contents of the provided argument will be cleared.
-    pub fn canonical(bytes: impl AsRef<[u8]>, scratch_space: Option<&mut Vec<u8>>) -> Option<Self> {
-        canonicalise(
-            bytes.as_ref(),
-            scratch_space
-                .map(|v| CborBuilder::with_scratch_space(v))
-                .unwrap_or_else(CborBuilder::new),
-        )
+    /// For more configuration options like reusing a scratch space or preferring definite size encoding
+    /// see [`CborBuilder`](struct.CborBuilder).
+    pub fn canonical(bytes: impl AsRef<[u8]>) -> Option<Self> {
+        canonicalise(bytes.as_ref(), CborBuilder::new())
     }
 
     /// Borrow the underlying bytes for Cbor interpretation.
