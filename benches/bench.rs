@@ -1,4 +1,6 @@
-use cbor_data::{Cbor, CborBuilder, CborOwned, Writer};
+use std::cell::RefCell;
+
+use cbor_data::{constants::TAG_EPOCH, Cbor, CborBuilder, CborOwned, Encoder, Writer};
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::{random, thread_rng, Rng};
 
@@ -10,20 +12,27 @@ fn name() -> String {
     s
 }
 
+thread_local! {
+    static SCRATCH: RefCell<Vec<u8>> = Vec::new().into();
+}
+
 fn create_cbor() -> CborOwned {
-    CborBuilder::default().write_dict(None, |b| {
-        b.with_key("type", |b| b.write_str("WorkStopped", None));
-        b.with_key("byWhom", |b| b.write_str(&*name(), None));
-        b.with_key("pause", |b| b.write_bool(false, None));
-        b.with_key("workers", |b| {
-            b.write_array(None, |b| {
-                b.write_str(&*name(), None);
-                b.write_str(&*name(), None);
-                b.write_str(&*name(), None);
-            })
-        });
-        b.with_key("started", |b| b.write_pos(random(), None));
-        b.with_key("stopped", |b| b.write_pos(random(), None));
+    SCRATCH.with(|v| {
+        let mut v = v.borrow_mut();
+        CborBuilder::with_scratch_space(v.as_mut()).encode_dict(|b| {
+            b.with_key("type", |b| b.write_str("WorkStopped", None));
+            b.with_key("byWhom", |b| b.write_str(&*name(), None));
+            b.with_key("pause", |b| b.write_bool(false, None));
+            b.with_key("workers", |b| {
+                b.write_array(None, |b| {
+                    b.write_str(&*name(), None);
+                    b.write_str(&*name(), None);
+                    b.write_str(&*name(), None);
+                })
+            });
+            b.with_key("started", |b| b.write_pos(random(), Some(TAG_EPOCH)));
+            b.with_key("stopped", |b| b.write_pos(random(), Some(TAG_EPOCH)));
+        })
     })
 }
 
@@ -57,7 +66,7 @@ fn extract(c: &mut Criterion) {
     c.bench_function("as_object", |b| {
         b.iter_batched_ref(
             create_cbor,
-            |o| o.value().unwrap().as_object().unwrap().depth(),
+            |o| Some(o.value()?.as_object()?.depth()),
             criterion::BatchSize::SmallInput,
         )
     });

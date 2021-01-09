@@ -15,7 +15,7 @@ use crate::{
 
 /// Lifted navigation structure for a CborValue.
 ///
-/// You can obtain this using [`CborValue::as_object()`](struct.CborValue#method.as_object).
+/// You can obtain this using [`CborValue::as_object()`](struct.CborValue.html#method.as_object).
 #[derive(Debug, Clone, PartialEq)]
 pub enum CborObject<'a> {
     Array(Vec<CborObject<'a>>),
@@ -36,10 +36,6 @@ impl<'a> CborObject<'a> {
 /// Low-level decoded form of a CBOR item. Use CborValue for inspecting values.
 ///
 /// Beware of the `Neg` variant, which carries `-1 - x`.
-///
-/// The Owned variants are only generated when decoding indefinite size (byte) strings in order
-/// to present a contiguous slice of memory. You will never see these if you used
-/// [`Cbor::canonical()`](struct.Cbor#method.canonical).
 #[derive(Debug, PartialEq, Clone)]
 pub enum ValueKind<'a> {
     Pos(u64),
@@ -110,7 +106,7 @@ impl<'a> PartialEq<CborValue<'_>> for CborValue<'a> {
 impl<'a> Display for CborValue<'a> {
     fn fmt(&self, mut f: &mut Formatter<'_>) -> std::fmt::Result {
         type Res<T> = Result<T, std::fmt::Error>;
-        impl crate::visit::Visitor<std::fmt::Error> for &mut Formatter<'_> {
+        impl<'a> crate::visit::Visitor<'a, std::fmt::Error> for &mut Formatter<'_> {
             fn visit_simple(&mut self, item: CborValue) -> Res<()> {
                 if let Some(t) = item.tag() {
                     write!(*self, "{}|", t)?;
@@ -172,7 +168,8 @@ impl<'a> CborValue<'a> {
         }
     }
 
-    /// strip off wrappers of CBOR encoded item
+    /// Strip off wrappers of CBOR item encoding: sees through byte strings with
+    /// [`TAG_CBOR_ITEM`](constants/constant.TAG_CBOR_ITEM.html).
     pub fn decoded(&self) -> Option<Self> {
         if let (Some(TAG_CBOR_ITEM), Bytes(b)) = (self.tag(), &self.kind) {
             tagged_value(b)?.decoded()

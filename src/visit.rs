@@ -18,7 +18,7 @@ use crate::{
 ///
 /// fn pretty_print(value: Cbor) -> Result<String, Error> {
 ///     struct X<'a>(&'a mut String);
-///     impl<'a> Visitor<Error> for X<'a> {
+///     impl<'a> Visitor<'a, Error> for X<'a> {
 ///         fn visit_simple(&mut self, item: CborValue) -> Result<(), Error> {
 ///             write!(self.0, "{}", item.kind)
 ///         }
@@ -66,9 +66,9 @@ use crate::{
 /// assert_eq!(pretty, r#"[5, {"a": -667, "b": 0x646566646566}, [false, "hello"], null]"#);
 /// ```
 #[allow(unused_variables)]
-pub trait Visitor<Err> {
+pub trait Visitor<'a, Err> {
     /// Visit a simple item, i.e. `item.kind` will neither be `Array` nor `Dict`.
-    fn visit_simple(&mut self, item: CborValue) -> Result<(), Err> {
+    fn visit_simple(&mut self, item: CborValue<'a>) -> Result<(), Err> {
         Ok(())
     }
     /// Visit the beginning of an array. `size` is None for indefinite size encoding.
@@ -105,7 +105,7 @@ pub trait Visitor<Err> {
     }
 }
 
-pub fn visit<Err, V: Visitor<Err>>(v: &mut V, c: CborValue) -> Result<(), Err> {
+pub fn visit<'a, Err, V: Visitor<'a, Err>>(v: &mut V, c: CborValue<'a>) -> Result<(), Err> {
     match c.kind {
         Array => {
             let info = integer(c.bytes);

@@ -17,7 +17,7 @@
 //! them.
 //!
 //! Regarding the interpretation of parsed data you have the option of inspecting the particular
-//! encoding (by pattern matching on [`CborValue`](struct.CborValue)) or extracting the information
+//! encoding (by pattern matching on [`CborValue`](struct.CborValue.html)) or extracting the information
 //! you need using the API methods. In the latter case, many binary representations may yield the
 //! same value, e.g. when asking for an integer the result may stem from a non-optimal encoding
 //! (like writing 57 as 64-bit value) or from a BigDecimal with mantissa 570 and exponent -1.
@@ -51,7 +51,7 @@ use visit::visit;
 /// For details on the format see [RFC 7049](https://tools.ietf.org/html/rfc7049).
 ///
 /// When interpreting CBOR messages from the outside (e.g. from the network) it is
-/// advisable to ingest those using the [`CborOwned::canonical`](struct.CborOwned#method.canonical) constructor.
+/// advisable to ingest those using the [`CborOwned::canonical`](struct.CborOwned.html#method.canonical) constructor.
 /// In case the message was encoded for example using [`CborBuilder`](./struct.CborBuilder.html)
 /// it is sufficient to use the [`trusting`](#method.trusting) constructor.
 #[derive(PartialEq)]
@@ -87,8 +87,8 @@ impl<'a> Cbor<'a> {
     /// No checks on the integrity are made, indexing methods may panic if encoded
     /// lengths are out of bound or when encountering indefinite size (byte) strings.
     /// If you want to carefully treat data obtained from unreliable sources, prefer
-    /// [`CborOwned::canonical`](struct.CborOwned#method.canonical). The results of
-    /// [`CborBuilder`](struct.CborBuilder) can also safely be fed to this method.
+    /// [`CborOwned::canonical`](struct.CborOwned.html#method.canonical). The results of
+    /// [`CborBuilder`](struct.CborBuilder.html) can also safely be fed to this method.
     pub fn trusting(bytes: &'a [u8]) -> Self {
         Self(bytes)
     }
@@ -98,8 +98,8 @@ impl<'a> Cbor<'a> {
     /// No checks on the integrity are made, indexing methods may panic if encoded
     /// lengths are out of bound or when encountering indefinite size (byte) strings.
     /// If you want to carefully treat data obtained from unreliable sources, prefer
-    /// [`CborOwned::canonical`](struct.CborOwned#method.canonical). The results of
-    /// [`CborBuilder`](struct.CborBuilder) can also safely be fed to this method.
+    /// [`CborOwned::canonical`](struct.CborOwned.html#method.canonical). The results of
+    /// [`CborBuilder`](struct.CborBuilder.html) can also safely be fed to this method.
     pub fn to_owned(&self) -> CborOwned {
         CborOwned::trusting(self.as_ref())
     }
@@ -146,10 +146,10 @@ impl<'a> Cbor<'a> {
     }
 
     /// Visit the interesting parts of this CBOR item as guided by the given
-    /// [`Visitor`](trait.Visitor).
+    /// [`Visitor`](trait.Visitor.html).
     ///
     /// Returns `false` if the visit was not even begun due to invalid or non-canonical CBOR.
-    pub fn visit<Err, V: Visitor<Err>>(&self, visitor: &mut V) -> Result<bool, Err> {
+    pub fn visit<Err, V: Visitor<'a, Err>>(&self, visitor: &mut V) -> Result<bool, Err> {
         if let Some(value) = self.value() {
             visit(visitor, value).map(|_| true)
         } else {
@@ -204,7 +204,7 @@ impl CborOwned {
     ///  - writing numbers in their smallest form
     ///
     /// For more configuration options like reusing a scratch space or preferring definite size encoding
-    /// see [`CborBuilder`](struct.CborBuilder).
+    /// see [`CborBuilder`](struct.CborBuilder.html).
     pub fn canonical(bytes: impl AsRef<[u8]>) -> Option<Self> {
         canonicalise(bytes.as_ref(), CborBuilder::new())
     }
@@ -248,10 +248,10 @@ impl CborOwned {
     }
 
     /// Visit the interesting parts of this CBOR item as guided by the given
-    /// [`Visitor`](trait.Visitor).
+    /// [`Visitor`](trait.Visitor.html).
     ///
     /// Returns `false` if the visit was not even begun due to invalid or non-canonical CBOR.
-    pub fn visit<Err, V: Visitor<Err>>(&self, visitor: &mut V) -> Result<bool, Err> {
+    pub fn visit<'a, Err, V: Visitor<'a, Err>>(&'a self, visitor: &mut V) -> Result<bool, Err> {
         if let Some(value) = self.value() {
             visit(visitor, value).map(|_| true)
         } else {

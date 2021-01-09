@@ -34,13 +34,11 @@ impl<'a> Bytes<'a> {
 ///
 /// let cbor = CborBuilder::default().encode_u64(12);
 ///
-/// let (array, ret) = CborBuilder::default().encode_array(|builder| {
+/// let array = CborBuilder::default().encode_array(|builder| {
 ///     builder
 ///         .encode_u64(18)
 ///         .encode_i64(-12);
-///     42
 /// });
-/// assert_eq!(ret, 42);
 ///
 /// let array2 = CborBuilder::default().with_max_definite_size(Some(1)).write_array(None, |builder| {
 ///     builder
@@ -52,7 +50,7 @@ impl<'a> Bytes<'a> {
 ///     builder
 ///         .with_key("a", |b| b.encode_u64(14))
 ///         .with_key("b", |b| b.encode_i64(-1));
-/// }).0;
+/// });
 ///
 /// let (dict2, ret) = CborBuilder::default().write_dict_ret(None, |builder| {
 ///     builder
@@ -121,24 +119,40 @@ pub trait Encoder: Writer {
         self.write_lit(Literal::L8(value.to_bits()), None)
     }
 
+    /// Encode a string.
+    ///
+    /// ```
+    /// use cbor_data::{CborBuilder, Encoder};
+    ///
+    /// let cbor = CborBuilder::default().encode_array(|builder| {
+    ///     builder.encode_str("hello");
+    ///     builder.encode_str(String::new());
+    /// });
+    ///
+    /// # assert_eq!(cbor.as_slice(), vec![0x82, 0x65, b'h', b'e', b'l', b'l', b'o', 0x60]);
+    /// ```
+    fn encode_str(self, value: impl AsRef<str>) -> Self::Output {
+        self.write_str(value.as_ref(), None)
+    }
+
     /// Write an array that is then filled by the provided closure using the passed builder.
     ///
-    /// see [`trait Encoder`](trait.Encoder) for usage examples
-    fn encode_array<F, T>(self, mut f: F) -> (Self::Output, T)
+    /// see [`trait Encoder`](trait.Encoder.html) for usage examples
+    fn encode_array<F>(self, mut f: F) -> Self::Output
     where
-        F: FnMut(&mut ArrayWriter<'_>) -> T,
+        F: FnMut(&mut ArrayWriter<'_>),
     {
-        self.write_array_ret(None, |builder| f(builder))
+        self.write_array(None, |builder| f(builder))
     }
 
     /// Write a dict that is then filled by the provided closure using the passed builder.
     ///
-    /// see [`trait Encoder`](trait.Encoder) for usage examples
-    fn encode_dict<F, T>(self, mut f: F) -> (Self::Output, T)
+    /// see [`trait Encoder`](trait.Encoder.html) for usage examples
+    fn encode_dict<F>(self, mut f: F) -> Self::Output
     where
-        F: FnMut(&mut DictWriter<'_>) -> T,
+        F: FnMut(&mut DictWriter<'_>),
     {
-        self.write_dict_ret(None, |builder| f(builder))
+        self.write_dict(None, |builder| f(builder))
     }
 }
 
@@ -151,7 +165,7 @@ impl<T: Writer> Encoder for T {}
 /// allows you to emit any item tagged with any number you desire.
 ///
 /// If you are looking for convenient methods of writing end-user data types please refer to
-/// the [`Encoder`](trait.Encoder) trait.
+/// the [`Encoder`](trait.Encoder.html) trait.
 pub trait Writer: Sized {
     type Output;
     #[doc(hidden)]
@@ -218,7 +232,7 @@ pub trait Writer: Sized {
     /// ```
     /// # use cbor_data::{CborBuilder, Writer};
     /// let cbor = CborBuilder::default().write_array(None, |builder| {
-    ///     builder.write_array_ret(None, |mut builder| {
+    ///     builder.write_array_ret(None, |builder| {
     ///         builder.write_pos(42, None);
     ///     });
     /// });
@@ -236,7 +250,7 @@ pub trait Writer: Sized {
     /// ```
     /// # use cbor_data::{CborBuilder, Writer};
     /// let (cbor, ret) = CborBuilder::default().write_array_ret(None, |builder| {
-    ///     builder.write_array_ret(None, |mut builder| {
+    ///     builder.write_array_ret(None, |builder| {
     ///         builder.write_pos(42, None);
     ///     });
     ///     42
@@ -267,7 +281,7 @@ pub trait Writer: Sized {
     /// ```
     /// # use cbor_data::{CborBuilder, Writer};
     /// let cbor = CborBuilder::default().write_array(None, |builder | {
-    ///     builder.write_dict_ret(None, |mut builder| {
+    ///     builder.write_dict_ret(None, |builder| {
     ///         builder.with_key("y", |b| b.write_pos(42, None));
     ///     });
     /// });
@@ -285,7 +299,7 @@ pub trait Writer: Sized {
     /// ```
     /// # use cbor_data::{CborBuilder, Writer};
     /// let (cbor, ret) = CborBuilder::default().write_array_ret(None, |builder | {
-    ///     builder.write_dict_ret(None, |mut builder| {
+    ///     builder.write_dict_ret(None, |builder| {
     ///         builder.with_key("y", |b| b.write_pos(42, None));
     ///     });
     ///     42
@@ -312,7 +326,7 @@ pub trait Writer: Sized {
     }
 
     /// Interpret the given bytes as a single CBOR item and write it to this builder,
-    /// canonicalising its contents like [`CborOwned::canonical()`](struct.CborOwned#method.canonical)
+    /// canonicalising its contents like [`CborOwned::canonical()`](struct.CborOwned.html#method.canonical)
     fn write_canonical(mut self, bytes: &[u8]) -> Option<Self::Output> {
         let max_definite = self.max_definite();
         let c = self.bytes(|b| {
@@ -446,7 +460,7 @@ impl<'a, O: CborOutput> Writer for CborBuilder<'a, O> {
 
 /// Builder for an array value, used by `write_array_ret()`.
 ///
-/// see [`trait Encoder`](trait.Encoder) for usage examples
+/// see [`trait Encoder`](trait.Encoder.html) for usage examples
 pub struct ArrayWriter<'a> {
     bytes: Bytes<'a>,
     count: u64,
@@ -497,7 +511,7 @@ impl<'a> Writer for ArrayWriter<'a> {
 
 /// Builder for a dict value, used by `write_dict_rec()`.
 ///
-/// see [`trait Encoder`](trait.Encoder) for usage examples
+/// see [`trait Encoder`](trait.Encoder.html) for usage examples
 pub struct DictWriter<'a>(ArrayWriter<'a>);
 
 impl<'a> DictWriter<'a> {
@@ -538,13 +552,13 @@ impl<'a> DictWriter<'a> {
 /// Builder for the single value of a dict key.
 ///
 /// This builder can be used for exactly one item (which may be a complex one, like an array)
-/// and returns a [`SingleResult`](struct.SingleResult) to prove to its
-/// [`DictWriter`](struct.DictWriter) that it has been used.
+/// and returns a [`SingleResult`](struct.SingleResult.html) to prove to its
+/// [`DictWriter`](struct.DictWriter.html) that it has been used.
 pub struct SingleBuilder<'a, 'b>(&'b mut ArrayWriter<'a>);
 
-/// Result value of using a [`SingleBuilder`](struct.SingleBuilder) proving that it has been used.
+/// Result value of using a [`SingleBuilder`](struct.SingleBuilder.html) proving that it has been used.
 ///
-/// This value needs to be returned to [`DictWriter.with_key()`](struct.DictWriter#method.with_key).
+/// This value needs to be returned to [`DictWriter.with_key()`](struct.DictWriter.html#method.with_key).
 /// You can only obtain it by using the `SingleBuilder`.
 pub struct SingleResult {
     ph: PhantomData<u8>,
