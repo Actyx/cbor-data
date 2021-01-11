@@ -211,11 +211,11 @@ impl<'a> Display for CborValue<'a> {
                 }
                 Ok(true)
             }
-            fn visit_dict_key(&mut self, key: &str, is_first: bool) -> Res<bool> {
+            fn visit_dict_key(&mut self, key: CborValue<'a>, is_first: bool) -> Res<bool> {
                 if !is_first {
                     write!(*self, ", ")?;
                 }
-                write!(*self, "\"{}\": ", key.escape_debug())?;
+                write!(*self, "{}: ", key)?;
                 Ok(true)
             }
             fn visit_dict_end(&mut self) -> Res<()> {

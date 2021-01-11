@@ -605,3 +605,20 @@ fn object() {
     assert_eq!(bytes.to_string(), r#"{"Fun": true, "Amt": -2}"#);
     assert_eq!(bytes.as_slice(), str_to_bytes("0xa26346756ef563416d7421"));
 }
+
+#[test]
+fn roundtrip_non_string_map() {
+    let complex = CborBuilder::new().write_array(Some(TAG_BIGDECIMAL), |b| {
+        b.write_pos(5, None);
+        b.write_dict(None, |b| {
+            b.with_cbor_key(|b| b.write_str("1", None), |b| b.write_neg(666, None));
+            b.with_cbor_key(|b| b.write_pos(2, None), |b| b.write_bytes(b"defdef", None));
+        });
+        b.write_array(None, |b| {
+            b.write_bool(false, None);
+            b.write_str("hello", None);
+        });
+        b.write_null(Some(12345));
+    });
+    assert_eq!(complex.to_string(), "4|[5, {\"1\": -667, 2: 0x646566646566}, [false, \"hello\"], 12345|null]");
+}

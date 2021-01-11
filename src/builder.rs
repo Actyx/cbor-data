@@ -561,10 +561,16 @@ impl<'a> DictWriter<'a> {
         key: &str,
         f: impl FnOnce(SingleBuilder<'_, '_>) -> SingleResult,
     ) -> &mut Self {
-        self.0
-            .non_tracking(self.0.max_definite)
-            .write_str(key, None);
-        f(SingleBuilder(&mut self.0));
+        self.with_cbor_key(|b| b.write_str(key, None), f)
+    }
+
+    pub fn with_cbor_key(
+        &mut self,
+        k: impl FnOnce(SingleBuilder<'_, '_>) -> SingleResult,
+        v: impl FnOnce(SingleBuilder<'_, '_>) -> SingleResult,
+    ) -> &mut Self {
+        k(SingleBuilder(&mut self.0.non_tracking(self.0.max_definite)));
+        v(SingleBuilder(&mut self.0));
         self
     }
 }
