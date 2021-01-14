@@ -1,6 +1,6 @@
 use crate::{
     constants::*,
-    value::Tag,
+    value::Tags,
     Cbor, CborValue,
     ValueKind::{self, *},
 };
@@ -197,14 +197,8 @@ fn skip(bytes: &[u8]) -> Option<&[u8]> {
     }
 }
 
-pub(crate) fn tag(mut bytes: &[u8]) -> Option<(Option<Tag>, &[u8])> {
-    let mut tag = None;
-    while major(bytes)? == MAJOR_TAG {
-        let (v, b, r) = integer(bytes)?;
-        tag = Some(Tag { tag: v, bytes: b });
-        bytes = r;
-    }
-    Some((tag, bytes))
+pub(crate) fn tags(bytes: &[u8]) -> Option<(Tags, &[u8])> {
+    Tags::new(bytes)
 }
 
 pub(crate) enum ValueResult<'a> {
@@ -253,10 +247,10 @@ pub(crate) fn value(bytes: &[u8]) -> Option<(ValueResult, &[u8], &[u8])> {
 }
 
 pub(crate) fn tagged_value(bytes: &[u8]) -> Option<CborValue> {
-    let (tag, rest) = tag(bytes)?;
+    let (tags, rest) = tags(bytes)?;
     let (kind, bytes, _rest) = value(rest)?;
     if let ValueResult::V(kind) = kind {
-        Some(CborValue { tag, kind, bytes })
+        Some(CborValue { tags, kind, bytes })
     } else {
         None
     }

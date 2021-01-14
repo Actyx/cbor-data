@@ -3,8 +3,10 @@ use cbor_data::{CborOwned, CborValue, Visitor};
 struct X<'a>(Vec<&'a str>);
 impl<'a> Visitor<'a, ()> for X<'a> {
     fn visit_simple(&mut self, item: CborValue<'a>) -> Result<(), ()> {
-        if let (Some(s), None) = (item.as_str(), item.tag) {
-            self.0.push(s);
+        if let (Some(s), tags) = (item.as_str(), item.tags) {
+            if tags.is_empty() {
+                self.0.push(s);
+            }
         }
         Ok(())
     }

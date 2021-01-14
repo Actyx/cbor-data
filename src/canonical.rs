@@ -3,13 +3,13 @@ use std::borrow::Cow;
 use crate::{
     builder::CborOutput,
     constants::*,
-    reader::{careful_literal, indefinite, integer, major, tag, value, value_bytes},
+    reader::{careful_literal, indefinite, integer, major, tags, value, value_bytes},
     ArrayWriter, CborBuilder, CborValue, DictWriter, Writer,
 };
 
 pub fn canonicalise<O: CborOutput>(bytes: &[u8], builder: CborBuilder<'_, O>) -> Option<O::Output> {
-    let (tag, bytes) = tag(bytes)?;
-    let tag = tag.map(|x| x.tag);
+    let (tags, bytes) = tags(bytes)?;
+    let tag = tags.last();
     match major(bytes)? {
         MAJOR_POS => Some(builder.write_pos(integer(bytes)?.0, tag)),
         MAJOR_NEG => Some(builder.write_neg(integer(bytes)?.0, tag)),
@@ -53,8 +53,8 @@ fn update3<'a, T>(b: &mut &'a [u8], val: Option<(T, &'a [u8], &'a [u8])>) -> Opt
 
 fn canonicalise_array<'a>(bytes: &'a [u8], builder: &mut ArrayWriter) -> Option<&'a [u8]> {
     fn one(bytes: &mut &[u8], builder: &mut ArrayWriter) -> Option<()> {
-        let (tag, b) = tag(bytes)?;
-        let tag = tag.map(|x| x.tag);
+        let (tags, b) = tags(bytes)?;
+        let tag = tags.last();
         match major(b)? {
             MAJOR_POS => {
                 builder.write_pos(update3(bytes, integer(b))?, tag);
@@ -116,12 +116,12 @@ fn canonicalise_dict<'a>(bytes: &'a [u8], builder: &mut DictWriter) -> Option<&'
     fn key<'b>(bytes_ref: &mut &'b [u8]) -> Option<Cow<'b, str>> {
         use crate::reader::ValueResult::*;
 
-        let (tag, rest) = tag(bytes_ref)?;
+        let (tags, rest) = tags(bytes_ref)?;
         let (value, bytes, rest) = value(rest)?;
         *bytes_ref = rest;
         match value {
             V(kind) => {
-                let value = CborValue { tag, kind, bytes };
+                let value = CborValue { tags, kind, bytes };
                 if let Some(s) = value.as_str() {
                     return Some(Cow::Borrowed(s));
                 }
@@ -136,8 +136,8 @@ fn canonicalise_dict<'a>(bytes: &'a [u8], builder: &mut DictWriter) -> Option<&'
         }
     }
     fn one(bytes: &mut &[u8], key: &str, builder: &mut DictWriter) -> Option<()> {
-        let (tag, b) = tag(bytes)?;
-        let tag = tag.map(|x| x.tag);
+        let (tags, b) = tags(bytes)?;
+        let tag = tags.last();
         match major(b)? {
             MAJOR_POS => {
                 let pos = update3(bytes, integer(b))?;

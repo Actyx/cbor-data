@@ -83,12 +83,6 @@ impl<'a> Display for ValueKind<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
-pub struct Tag<'a> {
-    pub tag: u64,
-    pub bytes: &'a [u8],
-}
-
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Tags<'a> {
     pub bytes: &'a [u8],
@@ -123,6 +117,10 @@ impl<'a> Tags<'a> {
     pub fn last(&self) -> Option<u64> {
         (*self).last()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.bytes.is_empty()
+    }
 }
 
 impl<'a> Iterator for Tags<'a> {
@@ -142,7 +140,7 @@ impl<'a> Iterator for Tags<'a> {
 /// Representation of a possibly tagged CBOR data item.
 #[derive(Debug, Clone)]
 pub struct CborValue<'a> {
-    pub tag: Option<Tag<'a>>,
+    pub tags: Tags<'a>,
     pub kind: ValueKind<'a>,
     pub bytes: &'a [u8],
 }
@@ -212,7 +210,7 @@ impl<'a> CborValue<'a> {
     #[cfg(test)]
     pub fn fake(tag: Option<u64>, kind: ValueKind<'a>) -> Self {
         Self {
-            tag: tag.map(|tag| Tag { tag, bytes: b"" }),
+            tags: Tags::fake(tag),
             kind,
             bytes: b"",
         }
@@ -230,7 +228,7 @@ impl<'a> CborValue<'a> {
 
     /// Get value of the innermost tag if one was provided.
     pub fn tag(&self) -> Option<u64> {
-        self.tag.as_ref().map(|t| t.tag)
+        self.tags.last()
     }
 
     /// Try to interpret this value as a 64bit unsigned integer.
