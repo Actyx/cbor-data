@@ -8,7 +8,7 @@ use std::{
 
 use crate::{
     constants::*,
-    reader::{integer, major, tagged_value, Iter},
+    reader::{integer, tagged_value, Iter},
     visit::visit,
     Cbor,
 };
@@ -161,8 +161,8 @@ impl<'a> Display for CborValue<'a> {
                 }
                 write!(*self, "{}", item.kind)
             }
-            fn visit_array_begin(&mut self, size: Option<u64>, tag: Option<u64>) -> Res<bool> {
-                if let Some(t) = tag {
+            fn visit_array_begin(&mut self, size: Option<u64>, tags: Tags<'a>) -> Res<bool> {
+                if let Some(t) = tags.last() {
                     write!(*self, "{}|", t)?;
                 }
                 write!(*self, "[")?;
@@ -180,8 +180,8 @@ impl<'a> Display for CborValue<'a> {
             fn visit_array_end(&mut self) -> Res<()> {
                 write!(*self, "]")
             }
-            fn visit_dict_begin(&mut self, size: Option<u64>, tag: Option<u64>) -> Res<bool> {
-                if let Some(t) = tag {
+            fn visit_dict_begin(&mut self, size: Option<u64>, tags: Tags<'a>) -> Res<bool> {
+                if let Some(t) = tags.last() {
                     write!(*self, "{}|", t)?;
                 }
                 write!(*self, "{{")?;
@@ -208,9 +208,9 @@ impl<'a> Display for CborValue<'a> {
 // TODO flesh out and extract data more thoroughly
 impl<'a> CborValue<'a> {
     #[cfg(test)]
-    pub fn fake(tag: Option<u64>, kind: ValueKind<'a>) -> Self {
+    pub fn fake(tags: impl IntoIterator<Item = u64>, kind: ValueKind<'a>) -> Self {
         Self {
-            tags: Tags::fake(tag),
+            tags: Tags::fake(tags),
             kind,
             bytes: b"",
         }
@@ -229,6 +229,11 @@ impl<'a> CborValue<'a> {
     /// Get value of the innermost tag if one was provided.
     pub fn tag(&self) -> Option<u64> {
         self.tags.last()
+    }
+
+    /// Get value of the innermost tag if one was provided.
+    pub fn tags(&self) -> Tags<'a> {
+        self.tags
     }
 
     /// Try to interpret this value as a 64bit unsigned integer.

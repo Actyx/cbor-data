@@ -1,5 +1,6 @@
 use crate::{
     reader::{integer, tagged_value, Iter},
+    value::Tags,
     CborValue,
     ValueKind::*,
 };
@@ -14,7 +15,7 @@ use crate::{
 ///
 /// ```
 /// use std::fmt::{Error, Formatter, Write};
-/// use cbor_data::{Cbor, CborOwned, CborValue, Visitor};
+/// use cbor_data::{Cbor, CborOwned, CborValue, Visitor, Tags};
 ///
 /// fn pretty_print(value: Cbor) -> Result<String, Error> {
 ///     struct X<'a>(&'a mut String);
@@ -22,7 +23,7 @@ use crate::{
 ///         fn visit_simple(&mut self, item: CborValue) -> Result<(), Error> {
 ///             write!(self.0, "{}", item.kind)
 ///         }
-///         fn visit_array_begin(&mut self, size: Option<u64>, tag: Option<u64>) -> Result<bool, Error> {
+///         fn visit_array_begin(&mut self, size: Option<u64>, tags: Tags<'a>) -> Result<bool, Error> {
 ///             write!(self.0, "[")?;
 ///             Ok(true)
 ///         }
@@ -35,7 +36,7 @@ use crate::{
 ///         fn visit_array_end(&mut self) -> Result<(), Error> {
 ///             write!(self.0, "]")
 ///         }
-///         fn visit_dict_begin(&mut self, size: Option<u64>, tag: Option<u64>) -> Result<bool, Error> {
+///         fn visit_dict_begin(&mut self, size: Option<u64>, tags: Tags<'a>) -> Result<bool, Error> {
 ///             write!(self.0, "{{")?;
 ///             Ok(true)
 ///         }
@@ -74,7 +75,7 @@ pub trait Visitor<'a, Err> {
     /// Visit the beginning of an array. `size` is None for indefinite size encoding.
     /// Return `false` to skip this array entirely, meaning that `visit_array_index`
     /// and `visit_array_end` will NOT be called for it.
-    fn visit_array_begin(&mut self, size: Option<u64>, tag: Option<u64>) -> Result<bool, Err> {
+    fn visit_array_begin(&mut self, size: Option<u64>, tags: Tags<'a>) -> Result<bool, Err> {
         Ok(true)
     }
     /// Visit an array element at the given index. Return `false` to skip over the element’s
@@ -90,7 +91,7 @@ pub trait Visitor<'a, Err> {
     /// Visit the beginning of an dict. `size` is None for indefinite size encoding.
     /// Return `false` to skip this dict entirely, meaning that `visit_dict_key`
     /// and `visit_dict_end` will NOT be called for it.
-    fn visit_dict_begin(&mut self, size: Option<u64>, tag: Option<u64>) -> Result<bool, Err> {
+    fn visit_dict_begin(&mut self, size: Option<u64>, tags: Tags<'a>) -> Result<bool, Err> {
         Ok(true)
     }
     /// Visit a dict value at the given key. Return `false` to skip over the value’s
@@ -112,7 +113,7 @@ pub fn visit<'a, Err, V: Visitor<'a, Err>>(v: &mut V, c: CborValue<'a>) -> Resul
             let bytes = info.map(|x| x.2).unwrap_or_else(|| &c.bytes[1..]);
             let length = info.map(|x| x.0);
 
-            if !v.visit_array_begin(length, c.tag())? {
+            if !v.visit_array_begin(length, c.tags())? {
                 return Ok(());
             }
 
@@ -132,7 +133,7 @@ pub fn visit<'a, Err, V: Visitor<'a, Err>>(v: &mut V, c: CborValue<'a>) -> Resul
             let bytes = info.map(|x| x.2).unwrap_or_else(|| &c.bytes[1..]);
             let length = info.map(|x| x.0);
 
-            if !v.visit_dict_begin(length, c.tag())? {
+            if !v.visit_dict_begin(length, c.tags())? {
                 return Ok(());
             }
 
