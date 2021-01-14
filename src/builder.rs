@@ -650,6 +650,12 @@ fn write_tag(bytes: &mut Vec<u8>, tag: Option<u64>) {
     }
 }
 
+pub(crate) fn write_tags(bytes: &mut Vec<u8>, tags: impl IntoIterator<Item = u64>) {
+    for tag in tags {
+        write_info(bytes, MAJOR_TAG, tag);
+    }
+}
+
 fn write_info(bytes: &mut Vec<u8>, major: u8, value: u64) -> usize {
     if value < 24 {
         bytes.push(major << 5 | (value as u8));

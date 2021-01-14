@@ -8,7 +8,7 @@ use std::{
 
 use crate::{
     constants::*,
-    reader::{integer, tagged_value, Iter},
+    reader::{integer, major, tagged_value, Iter},
     visit::visit,
     Cbor,
 };
@@ -87,6 +87,56 @@ impl<'a> Display for ValueKind<'a> {
 pub struct Tag<'a> {
     pub tag: u64,
     pub bytes: &'a [u8],
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub struct Tags<'a> {
+    pub bytes: &'a [u8],
+}
+
+impl<'a> Tags<'a> {
+    pub fn new(bytes: &'a [u8]) -> Option<(Self, &'a [u8])> {
+        let mut remaining = bytes;
+        while let Some(value) = remaining.get(0) {
+            if (*value >> 5) != MAJOR_TAG {
+                break;
+            }
+            let (_, _, r) = integer(remaining)?;
+            remaining = r;
+        }
+        let len = bytes.len() - remaining.len();
+        Some((
+            Self {
+                bytes: &bytes[..len],
+            },
+            remaining,
+        ))
+    }
+
+    #[cfg(test)]
+    pub fn fake(tags: impl IntoIterator<Item = u64>) -> Self {
+        let mut data = Vec::new();
+        crate::builder::write_tags(&mut data, tags);
+        Self { bytes: data.leak() }
+    }
+
+    pub fn last(&self) -> Option<u64> {
+        (*self).last()
+    }
+}
+
+impl<'a> Iterator for Tags<'a> {
+    type Item = u64;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.bytes.is_empty() {
+            None
+        } else {
+            let (tag, _, remaining) = integer(self.bytes)?;
+            self.bytes = remaining;
+            Some(tag)
+        }
+    }
 }
 
 /// Representation of a possibly tagged CBOR data item.
