@@ -20,7 +20,7 @@ use crate::{
 pub enum CborObject<'a> {
     Array(Vec<CborObject<'a>>),
     Dict(BTreeMap<&'a str, CborObject<'a>>),
-    Value(Option<u64>, ValueKind<'a>),
+    Value(Tags<'a>, ValueKind<'a>),
 }
 
 impl<'a> CborObject<'a> {
@@ -83,6 +83,8 @@ impl<'a> Display for ValueKind<'a> {
     }
 }
 
+// two tags can be considered different even if they contain the same values,
+// in the case of non-canonical encoding of tags
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Tags<'a> {
     pub bytes: &'a [u8],
@@ -121,6 +123,10 @@ impl<'a> Tags<'a> {
     pub fn is_empty(&self) -> bool {
         self.bytes.is_empty()
     }
+
+    pub fn empty() -> Self {
+        Self { bytes: &[] }
+    }
 }
 
 impl<'a> Iterator for Tags<'a> {
@@ -147,7 +153,7 @@ pub struct CborValue<'a> {
 
 impl<'a> PartialEq<CborValue<'_>> for CborValue<'a> {
     fn eq(&self, other: &CborValue<'_>) -> bool {
-        self.tag() == other.tag() && self.kind == other.kind
+        self.tags == other.tags && self.kind == other.kind
     }
 }
 
@@ -156,14 +162,14 @@ impl<'a> Display for CborValue<'a> {
         type Res<T> = Result<T, std::fmt::Error>;
         impl<'a> crate::visit::Visitor<'a, std::fmt::Error> for &mut Formatter<'_> {
             fn visit_simple(&mut self, item: CborValue) -> Res<()> {
-                if let Some(t) = item.tag() {
-                    write!(*self, "{}|", t)?;
+                for tag in item.tags() {
+                    write!(*self, "{}|", tag)?;
                 }
                 write!(*self, "{}", item.kind)
             }
             fn visit_array_begin(&mut self, size: Option<u64>, tags: Tags<'a>) -> Res<bool> {
-                if let Some(t) = tags.last() {
-                    write!(*self, "{}|", t)?;
+                for tag in tags {
+                    write!(*self, "{}|", tag)?;
                 }
                 write!(*self, "[")?;
                 if size.is_none() {
@@ -181,8 +187,8 @@ impl<'a> Display for CborValue<'a> {
                 write!(*self, "]")
             }
             fn visit_dict_begin(&mut self, size: Option<u64>, tags: Tags<'a>) -> Res<bool> {
-                if let Some(t) = tags.last() {
-                    write!(*self, "{}|", t)?;
+                for tag in tags {
+                    write!(*self, "{}|", tag)?;
                 }
                 write!(*self, "{{")?;
                 if size.is_none() {
@@ -219,19 +225,14 @@ impl<'a> CborValue<'a> {
     /// Strip off wrappers of CBOR item encoding: sees through byte strings with
     /// [`TAG_CBOR_ITEM`](constants/constant.TAG_CBOR_ITEM.html).
     pub fn decoded(&self) -> Option<Self> {
-        if let (Some(TAG_CBOR_ITEM), Bytes(b)) = (self.tag(), &self.kind) {
+        if let (Some(TAG_CBOR_ITEM), Bytes(b)) = (self.tags().last(), &self.kind) {
             tagged_value(b)?.decoded()
         } else {
             Some(self.clone())
         }
     }
 
-    /// Get value of the innermost tag if one was provided.
-    pub fn tag(&self) -> Option<u64> {
-        self.tags.last()
-    }
-
-    /// Get value of the innermost tag if one was provided.
+    /// Get value all tags, from the outermost to the innermost
     pub fn tags(&self) -> Tags<'a> {
         self.tags
     }
@@ -278,15 +279,15 @@ impl<'a> CborValue<'a> {
             Pos(x) => Some(x as f64),
             Neg(x) => Some(-1.0 - (x as f64)),
             Float(f) => Some(f),
-            Bytes(b) if decoded.tag() == Some(TAG_BIGNUM_POS) => Some(bytes_to_float(b)),
-            Bytes(b) if decoded.tag() == Some(TAG_BIGNUM_NEG) => Some(-bytes_to_float(b)),
-            Array if decoded.tag() == Some(TAG_BIGDECIMAL) => {
+            Bytes(b) if decoded.tags().last() == Some(TAG_BIGNUM_POS) => Some(bytes_to_float(b)),
+            Bytes(b) if decoded.tags().last() == Some(TAG_BIGNUM_NEG) => Some(-bytes_to_float(b)),
+            Array if decoded.tags().last() == Some(TAG_BIGDECIMAL) => {
                 let cbor = Cbor::trusting(decoded.bytes);
                 let exponent = cbor.index_iter(iter::once("0"))?.as_i32()?;
                 let mantissa = cbor.index_iter(iter::once("1"))?.as_f64()?;
                 Some(mantissa * 10f64.powi(exponent))
             }
-            Array if decoded.tag() == Some(TAG_BIGFLOAT) => {
+            Array if decoded.tags().last() == Some(TAG_BIGFLOAT) => {
                 let cbor = Cbor::trusting(decoded.bytes);
                 let exponent = cbor.index_iter(iter::once("0"))?.as_i32()?;
                 let mantissa = cbor.index_iter(iter::once("1"))?.as_f64()?;
@@ -303,8 +304,10 @@ impl<'a> CborValue<'a> {
         let decoded = self.decoded()?;
         match decoded.kind {
             Bytes(b) => Some(Cow::Borrowed(b)),
-            Str(s) if decoded.tag() == Some(TAG_BASE64) => base64::decode(s).ok().map(Cow::Owned),
-            Str(s) if decoded.tag() == Some(TAG_BASE64URL) => {
+            Str(s) if decoded.tags().last() == Some(TAG_BASE64) => {
+                base64::decode(s).ok().map(Cow::Owned)
+            }
+            Str(s) if decoded.tags().last() == Some(TAG_BASE64URL) => {
                 base64::decode_config(s, base64::URL_SAFE)
                     .ok()
                     .map(Cow::Owned)
@@ -320,7 +323,7 @@ impl<'a> CborValue<'a> {
     /// as they are (even when their binary decoded form is valid UTF-8).
     pub fn as_str(&self) -> Option<&'a str> {
         let decoded = self.decoded()?;
-        let tag = decoded.tag();
+        let tag = decoded.tags().last();
         match self.kind {
             Str(s) => Some(s),
             Bytes(b) if tag != Some(TAG_BIGNUM_POS) && tag != Some(TAG_BIGNUM_NEG) => {
@@ -364,7 +367,7 @@ impl<'a> CborValue<'a> {
                 }
                 Some(CborObject::Dict(m))
             }
-            _ => Some(CborObject::Value(decoded.tag(), decoded.kind)),
+            _ => Some(CborObject::Value(decoded.tags(), decoded.kind)),
         }
     }
 }
