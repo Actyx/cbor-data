@@ -109,6 +109,8 @@ impl<'a> Tags<'a> {
         ))
     }
 
+    /// Create fake tags for testing. Caution: this leaks memory.
+    /// Tags are from outer to inner.
     #[cfg(test)]
     pub fn fake(tags: impl IntoIterator<Item = u64>) -> Self {
         let mut data = Vec::new();
@@ -116,8 +118,21 @@ impl<'a> Tags<'a> {
         Self { bytes: data.leak() }
     }
 
+    /// outermost / first tag
+    pub fn first(&self) -> Option<u64> {
+        let mut iter = *self;
+        iter.next()
+    }
+
+    /// innermost / last tag
     pub fn last(&self) -> Option<u64> {
         (*self).last()
+    }
+
+    /// single tag. If there is more than one tag, this will return None
+    pub fn single(&self) -> Option<u64> {
+        let mut iter = *self;
+        iter.next().filter(|_| iter.next().is_none())
     }
 
     pub fn is_empty(&self) -> bool {
@@ -213,6 +228,10 @@ impl<'a> Display for CborValue<'a> {
 
 // TODO flesh out and extract data more thoroughly
 impl<'a> CborValue<'a> {
+    /// creates a fake CborValue for testing. Caution: this leaks memory!
+    ///
+    /// -tags: tags from outer to inner
+    /// -kind: the value to store    
     #[cfg(test)]
     pub fn fake(tags: impl IntoIterator<Item = u64>, kind: ValueKind<'a>) -> Self {
         Self {
@@ -413,5 +432,18 @@ mod tests {
 
         let bytes = to_cbor("a346/+0", TAG_BASE64);
         assert_eq!(b(&bytes), vec![107, 126, 58, 255, 237]);
+    }
+
+    #[test]
+    fn tags() {
+        let tags = Tags::fake(vec![1, 2, 3]);
+        assert_eq!(tags.last(), Some(3));
+        assert_eq!(tags.first(), Some(1));
+        assert_eq!(tags.single(), None);
+
+        let single = Tags::fake(vec![4]);
+        assert_eq!(single.last(), Some(4));
+        assert_eq!(single.first(), Some(4));
+        assert_eq!(single.single(), Some(4));
     }
 }

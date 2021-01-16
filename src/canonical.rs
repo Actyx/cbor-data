@@ -13,9 +13,8 @@ pub fn canonicalise<O: CborOutput>(bytes: &[u8], builder: CborBuilder<'_, O>) ->
         MAJOR_POS => Some(builder.write_pos(integer(bytes)?.0, tags)),
         MAJOR_NEG => Some(builder.write_neg(integer(bytes)?.0, tags)),
         MAJOR_BYTES => {
-            if tags.last() == Some(TAG_CBOR_ITEM) {
+            if tags.single() == Some(TAG_CBOR_ITEM) {
                 // drop top-level CBOR item encoding wrapper
-                // TODO: add back other tags somehow
                 canonicalise(value_bytes(bytes, false)?.0.as_ref(), builder)
             } else {
                 Some(builder.write_bytes(value_bytes(bytes, false)?.0.as_ref(), tags))
@@ -62,9 +61,8 @@ fn canonicalise_array<'a>(bytes: &'a [u8], builder: &mut ArrayWriter) -> Option<
                 builder.write_neg(update3(bytes, integer(b))?, tags);
             }
             MAJOR_BYTES => {
-                if tags.last() == Some(TAG_CBOR_ITEM) {
+                if tags.single() == Some(TAG_CBOR_ITEM) {
                     // drop CBOR item encoding wrapper - may choose to use these later for more efficient skipping
-                    // TODO: add back other tags somehow
                     let decoded = update(bytes, value_bytes(b, false))?;
                     // the line above has advanced the main loop’s reference, here we advance a temporary one
                     one(&mut decoded.as_ref(), builder)?
@@ -147,9 +145,8 @@ fn canonicalise_dict<'a>(bytes: &'a [u8], builder: &mut DictWriter) -> Option<&'
                 builder.with_key(key, |b| b.write_neg(neg, tags));
             }
             MAJOR_BYTES => {
-                if tags.last() == Some(TAG_CBOR_ITEM) {
+                if tags.single() == Some(TAG_CBOR_ITEM) {
                     // drop CBOR item encoding wrapper - may choose to use these later for more efficient skipping
-                    // TODO: add back other tags somehow
                     let decoded = update(bytes, value_bytes(b, false))?;
                     // the line above has advanced the main loop’s reference, here we advance a temporary one
                     one(&mut decoded.as_ref(), key, builder)?

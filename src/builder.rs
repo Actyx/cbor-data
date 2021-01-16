@@ -180,45 +180,53 @@ pub trait Writer: Sized {
     fn max_definite(&self) -> Option<u64>;
 
     /// Write a unsigned value of up to 64 bits.
+    /// Tags are from outer to inner.
     fn write_pos(mut self, value: u64, tags: impl IntoIterator<Item = u64>) -> Self::Output {
         self.bytes(|b| write_positive(b, value, tags));
         self.to_output()
     }
 
     /// Write a negative value of up to 64 bits — the represented number is `-1 - value`.
+    /// Tags are from outer to inner.
     fn write_neg(mut self, value: u64, tags: impl IntoIterator<Item = u64>) -> Self::Output {
         self.bytes(|b| write_neg(b, value, tags));
         self.to_output()
     }
 
     /// Write the given slice as a definite size byte string.
+    /// Tags are from outer to inner.
     fn write_bytes(mut self, value: &[u8], tags: impl IntoIterator<Item = u64>) -> Self::Output {
         self.bytes(|b| write_bytes(b, value, tags));
         self.to_output()
     }
 
     /// Write the given slice as a definite size string.
+    /// Tags are from outer to inner.
     fn write_str(mut self, value: &str, tags: impl IntoIterator<Item = u64>) -> Self::Output {
         self.bytes(|b| write_str(b, value, tags));
         self.to_output()
     }
 
+    /// Tags are from outer to inner.
     fn write_bool(mut self, value: bool, tags: impl IntoIterator<Item = u64>) -> Self::Output {
         self.bytes(|b| write_bool(b, value, tags));
         self.to_output()
     }
 
+    /// Tags are from outer to inner.
     fn write_null(mut self, tags: impl IntoIterator<Item = u64>) -> Self::Output {
         self.bytes(|b| write_null(b, tags));
         self.to_output()
     }
 
+    /// Tags are from outer to inner.
     fn write_undefined(mut self, tags: impl IntoIterator<Item = u64>) -> Self::Output {
         self.bytes(|b| write_undefined(b, tags));
         self.to_output()
     }
 
     /// Write custom literal value — [RFC 7049 §2.3](https://tools.ietf.org/html/rfc7049#section-2.3) is required reading.
+    /// Tags are from outer to inner.
     fn write_lit(mut self, value: Literal, tags: impl IntoIterator<Item = u64>) -> Self::Output {
         self.bytes(|b| {
             write_tags(b, tags);
@@ -228,6 +236,7 @@ pub trait Writer: Sized {
     }
 
     /// Write a nested array using the given closure that receives an array builder.
+    /// Tags are from outer to inner.
     ///
     /// ```
     /// # use cbor_data::{CborBuilder, Writer};
@@ -246,6 +255,7 @@ pub trait Writer: Sized {
     }
 
     /// Write a nested array using the given closure that receives an array builder.
+    /// Tags are from outer to inner.
     ///
     /// ```
     /// # use cbor_data::{CborBuilder, Writer};
@@ -281,6 +291,7 @@ pub trait Writer: Sized {
     }
 
     /// Write a nested dict using the given closure that receives a dict builder.
+    /// Tags are from outer to inner.
     ///
     /// ```
     /// # use cbor_data::{CborBuilder, Writer};
@@ -299,6 +310,7 @@ pub trait Writer: Sized {
     }
 
     /// Write a nested dict using the given closure that receives a dict builder.
+    /// Tags are from outer to inner.
     ///
     /// ```
     /// # use cbor_data::{CborBuilder, Writer};
@@ -607,28 +619,33 @@ where
     }
 }
 
+/// Tags are from outer to inner.
 fn write_positive(bytes: &mut Vec<u8>, value: u64, tags: impl IntoIterator<Item = u64>) {
     write_tags(bytes, tags);
     write_info(bytes, MAJOR_POS, value);
 }
 
+/// Tags are from outer to inner.
 fn write_neg(bytes: &mut Vec<u8>, value: u64, tags: impl IntoIterator<Item = u64>) {
     write_tags(bytes, tags);
     write_info(bytes, MAJOR_NEG, value);
 }
 
+/// Tags are from outer to inner.
 fn write_str(bytes: &mut Vec<u8>, value: &str, tags: impl IntoIterator<Item = u64>) {
     write_tags(bytes, tags);
     write_info(bytes, MAJOR_STR, value.len() as u64);
     bytes.extend_from_slice(value.as_bytes());
 }
 
+/// Tags are from outer to inner.
 fn write_bytes(bytes: &mut Vec<u8>, value: &[u8], tags: impl IntoIterator<Item = u64>) {
     write_tags(bytes, tags);
     write_info(bytes, MAJOR_BYTES, value.len() as u64);
     bytes.extend_from_slice(value);
 }
 
+/// Tags are from outer to inner.
 fn write_bool(bytes: &mut Vec<u8>, value: bool, tags: impl IntoIterator<Item = u64>) {
     write_tags(bytes, tags);
     write_info(
@@ -642,16 +659,19 @@ fn write_bool(bytes: &mut Vec<u8>, value: bool, tags: impl IntoIterator<Item = u
     );
 }
 
+/// Tags are from outer to inner.
 fn write_null(bytes: &mut Vec<u8>, tags: impl IntoIterator<Item = u64>) {
     write_tags(bytes, tags);
     write_info(bytes, MAJOR_LIT, LIT_NULL.into());
 }
 
+/// Tags are from outer to inner.
 fn write_undefined(bytes: &mut Vec<u8>, tags: impl IntoIterator<Item = u64>) {
     write_tags(bytes, tags);
     write_info(bytes, MAJOR_LIT, LIT_UNDEFINED.into());
 }
 
+/// Tags are from outer to inner.
 pub(crate) fn write_tags(bytes: &mut Vec<u8>, tags: impl IntoIterator<Item = u64>) {
     for tag in tags {
         write_info(bytes, MAJOR_TAG, tag);
