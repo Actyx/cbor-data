@@ -5,7 +5,7 @@ use maplit::btreemap;
 use crate::{
     constants::*,
     value::{CborObject, CborValue, ValueKind::*},
-    CborBuilder, CborOwned, ValueKind, Writer,
+    CborBuilder, CborOwned, Tags, ValueKind, Writer,
 };
 
 #[test]
@@ -378,9 +378,9 @@ fn object() {
     assert_eq!(
         o(&bytes),
         Array(vec![
-            Value(None, Pos(1)),
-            Value(None, Pos(2)),
-            Value(None, Pos(3))
+            Value(Tags::empty(), Pos(1)),
+            Value(Tags::empty(), Pos(2)),
+            Value(Tags::empty(), Pos(3))
         ])
     );
     assert_eq!(bytes.to_string(), "[1, 2, 3]");
@@ -390,9 +390,15 @@ fn object() {
     assert_eq!(
         o(&bytes),
         Array(vec![
-            Value(None, Pos(1)),
-            Array(vec![Value(None, Pos(2)), Value(None, Pos(3))]),
-            Array(vec![Value(None, Pos(4)), Value(None, Pos(5))]),
+            Value(Tags::empty(), Pos(1)),
+            Array(vec![
+                Value(Tags::empty(), Pos(2)),
+                Value(Tags::empty(), Pos(3))
+            ]),
+            Array(vec![
+                Value(Tags::empty(), Pos(4)),
+                Value(Tags::empty(), Pos(5))
+            ]),
         ])
     );
     assert_eq!(bytes.to_string(), "[1, [2, 3], [4, 5]]");
@@ -404,7 +410,7 @@ fn object() {
     );
     assert_eq!(
         o(&bytes),
-        Array((1u64..26).map(|i| Value(None, Pos(i))).collect())
+        Array((1u64..26).map(|i| Value(Tags::empty(), Pos(i))).collect())
     );
     assert_eq!(bytes.to_string(), "[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25]");
     assert_eq!(
@@ -421,8 +427,8 @@ fn object() {
     assert_eq!(
         o(&bytes),
         Dict(btreemap! {
-            "1" => Value(None, Pos(2)),
-            "3" => Value(None, Pos(4))
+            "1" => Value(Tags::empty(), Pos(2)),
+            "3" => Value(Tags::empty(), Pos(4))
         })
     );
     // note that canonicalisation turns all dict keys into strings
@@ -433,8 +439,8 @@ fn object() {
     assert_eq!(
         o(&bytes),
         Dict(btreemap! {
-            "a" => Value(None, Pos(1)),
-            "b" => Array(vec![Value(None, Pos(2)), Value(None, Pos(3))])
+            "a" => Value(Tags::empty(), Pos(1)),
+            "b" => Array(vec![Value(Tags::empty(), Pos(2)), Value(Tags::empty(), Pos(3))])
         })
     );
     assert_eq!(bytes.to_string(), r#"{"a": 1, "b": [2, 3]}"#);
@@ -444,9 +450,9 @@ fn object() {
     assert_eq!(
         o(&bytes),
         Array(vec![
-            Value(None, Str("a")),
+            Value(Tags::empty(), Str("a")),
             Dict(btreemap! {
-                "b" => Value(None, Str("c"))
+                "b" => Value(Tags::empty(), Str("c"))
             })
         ])
     );
@@ -457,11 +463,11 @@ fn object() {
     assert_eq!(
         o(&bytes),
         Dict(btreemap! {
-            "a" => Value(None, Str("A")),
-            "b" => Value(None, Str("B")),
-            "c" => Value(None, Str("C")),
-            "d" => Value(None, Str("D")),
-            "e" => Value(None, Str("E")),
+            "a" => Value(Tags::empty(), Str("A")),
+            "b" => Value(Tags::empty(), Str("B")),
+            "c" => Value(Tags::empty(), Str("C")),
+            "d" => Value(Tags::empty(), Str("D")),
+            "e" => Value(Tags::empty(), Str("E")),
         })
     );
     assert_eq!(
@@ -482,9 +488,15 @@ fn object() {
     assert_eq!(
         o(&bytes),
         Array(vec![
-            Value(None, Pos(1)),
-            Array(vec![Value(None, Pos(2)), Value(None, Pos(3))]),
-            Array(vec![Value(None, Pos(4)), Value(None, Pos(5))]),
+            Value(Tags::empty(), Pos(1)),
+            Array(vec![
+                Value(Tags::empty(), Pos(2)),
+                Value(Tags::empty(), Pos(3))
+            ]),
+            Array(vec![
+                Value(Tags::empty(), Pos(4)),
+                Value(Tags::empty(), Pos(5))
+            ]),
         ])
     );
     assert_eq!(bytes.to_string(), "[1, [2, 3], [4, 5]]");
@@ -494,9 +506,15 @@ fn object() {
     assert_eq!(
         o(&bytes),
         Array(vec![
-            Value(None, Pos(1)),
-            Array(vec![Value(None, Pos(2)), Value(None, Pos(3))]),
-            Array(vec![Value(None, Pos(4)), Value(None, Pos(5))]),
+            Value(Tags::empty(), Pos(1)),
+            Array(vec![
+                Value(Tags::empty(), Pos(2)),
+                Value(Tags::empty(), Pos(3))
+            ]),
+            Array(vec![
+                Value(Tags::empty(), Pos(4)),
+                Value(Tags::empty(), Pos(5))
+            ]),
         ])
     );
     assert_eq!(bytes.to_string(), "[1, [2, 3], [4, 5]]");
@@ -506,9 +524,15 @@ fn object() {
     assert_eq!(
         o(&bytes),
         Array(vec![
-            Value(None, Pos(1)),
-            Array(vec![Value(None, Pos(2)), Value(None, Pos(3))]),
-            Array(vec![Value(None, Pos(4)), Value(None, Pos(5))]),
+            Value(Tags::empty(), Pos(1)),
+            Array(vec![
+                Value(Tags::empty(), Pos(2)),
+                Value(Tags::empty(), Pos(3))
+            ]),
+            Array(vec![
+                Value(Tags::empty(), Pos(4)),
+                Value(Tags::empty(), Pos(5))
+            ]),
         ])
     );
     assert_eq!(bytes.to_string(), "[1, [2, 3], [4, 5]]");
@@ -518,9 +542,15 @@ fn object() {
     assert_eq!(
         o(&bytes),
         Array(vec![
-            Value(None, Pos(1)),
-            Array(vec![Value(None, Pos(2)), Value(None, Pos(3))]),
-            Array(vec![Value(None, Pos(4)), Value(None, Pos(5))]),
+            Value(Tags::empty(), Pos(1)),
+            Array(vec![
+                Value(Tags::empty(), Pos(2)),
+                Value(Tags::empty(), Pos(3))
+            ]),
+            Array(vec![
+                Value(Tags::empty(), Pos(4)),
+                Value(Tags::empty(), Pos(5))
+            ]),
         ])
     );
     assert_eq!(bytes.to_string(), "[1, [2, 3], [4, 5]]");
@@ -532,7 +562,7 @@ fn object() {
     );
     assert_eq!(
         o(&bytes),
-        Array((1u64..26).map(|i| Value(None, Pos(i))).collect())
+        Array((1u64..26).map(|i| Value(Tags::empty(), Pos(i))).collect())
     );
     assert_eq!(bytes.to_string(), "[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25]");
     assert_eq!(
@@ -544,8 +574,8 @@ fn object() {
     assert_eq!(
         o(&bytes),
         Dict(btreemap! {
-            "a" => Value(None, Pos(1)),
-            "b" => Array(vec![Value(None, Pos(2)), Value(None, Pos(3))])
+            "a" => Value(Tags::empty(), Pos(1)),
+            "b" => Array(vec![Value(Tags::empty(), Pos(2)), Value(Tags::empty(), Pos(3))])
         })
     );
     assert_eq!(bytes.to_string(), r#"{"a": 1, "b": [2, 3]}"#);
@@ -555,9 +585,9 @@ fn object() {
     assert_eq!(
         o(&bytes),
         Array(vec![
-            Value(None, Str("a")),
+            Value(Tags::empty(), Str("a")),
             Dict(btreemap! {
-                "b" => Value(None, Str("c"))
+                "b" => Value(Tags::empty(), Str("c"))
             })
         ])
     );
@@ -568,8 +598,8 @@ fn object() {
     assert_eq!(
         o(&bytes),
         Dict(btreemap! {
-            "Fun" => Value(None, Bool(true)),
-            "Amt" => Value(None, Neg(1))
+            "Fun" => Value(Tags::empty(), Bool(true)),
+            "Amt" => Value(Tags::empty(), Neg(1))
         })
     );
     assert_eq!(bytes.to_string(), r#"{"Fun": true, "Amt": -2}"#);

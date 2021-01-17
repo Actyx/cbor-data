@@ -39,7 +39,7 @@ pub use builder::{
     SingleResult, WithOutput, Writer,
 };
 pub use reader::Literal;
-pub use value::{CborObject, CborValue, ValueKind};
+pub use value::{CborObject, CborValue, Tags, ValueKind};
 pub use visit::Visitor;
 
 use canonical::canonicalise;
