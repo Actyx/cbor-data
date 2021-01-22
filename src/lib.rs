@@ -27,6 +27,7 @@ use std::fmt::{Debug, Display};
 mod builder;
 mod canonical;
 pub mod constants;
+mod path;
 mod reader;
 mod value;
 mod visit;
@@ -38,6 +39,7 @@ pub use builder::{
     ArrayWriter, CborBuilder, CborOutput, DictWriter, Encoder, NoOutput, SingleBuilder,
     SingleResult, WithOutput, Writer,
 };
+pub use path::{path, Path};
 pub use reader::Literal;
 pub use value::{CborObject, CborValue, Tags, ValueKind};
 pub use visit::Visitor;
@@ -198,6 +200,10 @@ impl<'a> Cbor<'a> {
         ptr2(self.as_slice(), path.iter())
     }
 
+    pub fn index_path<'b>(&self, path: Path<'b>) -> Option<CborValue<'a>> {
+        todo!()
+    }
+
     /// Visit the interesting parts of this CBOR item as guided by the given
     /// [`Visitor`](trait.Visitor.html).
     ///
@@ -302,6 +308,10 @@ impl CborOwned {
 
     pub fn index_cbor<'b>(&self, path: &'b impl CborPath<'b>) -> Option<CborValue> {
         self.borrow().index_cbor(path)
+    }
+
+    pub fn index_path<'b>(&self, path: Path<'b>) -> Option<CborValue> {
+        self.borrow().index_path(path)
     }
 
     /// Visit the interesting parts of this CBOR item as guided by the given
