@@ -10,8 +10,8 @@ impl<'a> Visitor<'a, ()> for X<'a> {
         }
         Ok(())
     }
-    fn visit_dict_key(&mut self, key: &str, _is_first: bool) -> Result<bool, ()> {
-        Ok(key != "Fun")
+    fn visit_dict_key(&mut self, key: CborValue<'a>, _is_first: bool) -> Result<bool, ()> {
+        Ok(key.as_str() != Some("Fun"))
     }
 }
 

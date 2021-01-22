@@ -40,11 +40,11 @@ use crate::{
 ///             write!(self.0, "{{")?;
 ///             Ok(true)
 ///         }
-///         fn visit_dict_key(&mut self, key: &str, is_first: bool) -> Result<bool, Error> {
+///         fn visit_dict_key(&mut self, key: CborValue, is_first: bool) -> Result<bool, Error> {
 ///             if !is_first {
 ///                 write!(self.0, ", ")?;
 ///             }
-///             write!(self.0, "\"{}\": ", key.escape_debug())?;
+///             write!(self.0, "{}: ", key)?;
 ///             Ok(true)
 ///         }
 ///         fn visit_dict_end(&mut self) -> Result<(), Error> {
@@ -97,7 +97,10 @@ pub trait Visitor<'a, Err> {
     /// Visit a dict value at the given key. Return `false` to skip over the value’s
     /// contents, otherwise nested items (simple or otherwise) will be visited before visiting
     /// the next key or the dict’s end.
-    fn visit_dict_key(&mut self, key: &str, is_first: bool) -> Result<bool, Err> {
+    ///
+    /// In most cases the key will be a string or an integer. In the rare case where a key is a
+    /// complex struct, you can visit it manually.
+    fn visit_dict_key(&mut self, key: CborValue<'a>, is_first: bool) -> Result<bool, Err> {
         Ok(true)
     }
     /// Visit the end of the current dict.
@@ -140,7 +143,7 @@ pub fn visit<'a, Err, V: Visitor<'a, Err>>(v: &mut V, c: CborValue<'a>) -> Resul
             let mut iter = Iter::new(bytes, length.map(|x| x * 2));
             let mut is_first = true;
             while let Some(key) = iter.next() {
-                if let Some(Str(key)) = tagged_value(key.as_slice()).map(|x| x.kind) {
+                if let Some(key) = tagged_value(key.as_slice()) {
                     if v.visit_dict_key(key, is_first)? {
                         if let Some(item) = iter
                             .next()
