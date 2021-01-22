@@ -97,6 +97,9 @@ pub trait Visitor<'a, Err> {
     /// Visit a dict value at the given key. Return `false` to skip over the value’s
     /// contents, otherwise nested items (simple or otherwise) will be visited before visiting
     /// the next key or the dict’s end.
+    ///
+    /// In most cases the key will be a string or an integer. In the rare case where a key is a
+    /// complex struct, you can visit it manually.
     fn visit_dict_key(&mut self, key: CborValue<'a>, is_first: bool) -> Result<bool, Err> {
         Ok(true)
     }
