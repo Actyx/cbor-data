@@ -5,7 +5,7 @@ use maplit::btreemap;
 use crate::{
     constants::*,
     value::{CborObject, CborValue, ValueKind::*},
-    CborBuilder, CborOwned, Tags, ValueKind, Writer,
+    CborBuilder, CborOwned, OwnedCborPath, Tags, ValueKind, Writer,
 };
 
 #[test]
@@ -107,6 +107,40 @@ fn canonical() {
         Some(CborValue::fake(None, Str("hello")))
     );
     assert_eq!(complex.index("3"), Some(CborValue::fake(Some(12345), Null)));
+
+    assert_eq!(complex.index_cbor(&OwnedCborPath::new().str("a")), None);
+    assert_eq!(
+        complex.index_cbor(&OwnedCborPath::new().u64(0)),
+        Some(CborValue::fake(None, Pos(5)))
+    );
+    assert_eq!(
+        complex.index_cbor(&OwnedCborPath::new().u64(1)),
+        Some(CborValue::fake(None, Dict))
+    );
+    assert_eq!(
+        complex.index_cbor(&OwnedCborPath::new().u64(1).str("a")),
+        Some(CborValue::fake(None, Neg(666)))
+    );
+    assert_eq!(
+        complex.index_cbor(&OwnedCborPath::new().u64(1).str("b")),
+        Some(CborValue::fake(None, Bytes(b"defdef")))
+    );
+    assert_eq!(
+        complex.index_cbor(&OwnedCborPath::new().u64(2)),
+        Some(CborValue::fake(None, Array))
+    );
+    assert_eq!(
+        complex.index_cbor(&OwnedCborPath::new().u64(2).u64(0)),
+        Some(CborValue::fake(None, Bool(false)))
+    );
+    assert_eq!(
+        complex.index_cbor(&OwnedCborPath::new().u64(2).u64(1)),
+        Some(CborValue::fake(None, Str("hello")))
+    );
+    assert_eq!(
+        complex.index_cbor(&OwnedCborPath::new().u64(3)),
+        Some(CborValue::fake(Some(12345), Null))
+    );
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -620,5 +654,8 @@ fn roundtrip_non_string_map() {
         });
         b.write_null(Some(12345));
     });
-    assert_eq!(complex.to_string(), "4|[5, {\"1\": -667, 2: 0x646566646566}, [false, \"hello\"], 12345|null]");
+    assert_eq!(
+        complex.to_string(),
+        "4|[5, {\"1\": -667, 2: 0x646566646566}, [false, \"hello\"], 12345|null]"
+    );
 }

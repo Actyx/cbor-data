@@ -43,7 +43,7 @@ pub use value::{CborObject, CborValue, Tags, ValueKind};
 pub use visit::Visitor;
 
 use canonical::canonicalise;
-use reader::{ptr, tagged_value};
+use reader::{ptr, ptr2, tagged_value};
 use visit::visit;
 
 /// Wrapper around a byte slice that allows parsing as CBOR value.
@@ -111,6 +111,55 @@ impl<'a> AsRef<[u8]> for Cbor<'a> {
     }
 }
 
+pub trait CborPath<'a> {
+    type Iter: Iterator<Item = CborValue<'a>>;
+    fn iter(&'a self) -> Self::Iter;
+}
+
+pub struct OwnedCborPath(Vec<CborOwned>);
+
+impl OwnedCborPath {
+    pub fn new() -> Self {
+        Self(Vec::new())
+    }
+
+    pub fn str(mut self, value: &str) -> Self {
+        self.0.push(CborBuilder::default().write_str(value, None));
+        self
+    }
+
+    pub fn u64(mut self, value: u64) -> Self {
+        self.0.push(CborBuilder::default().encode_u64(value));
+        self
+    }
+
+    pub fn parse(text: &str) -> Self {
+        let parts = text
+            .split(".")
+            .map(|t| CborBuilder::default().write_str(t, None))
+            .collect::<Vec<_>>();
+        Self(parts)
+    }
+}
+
+impl<'a> CborPath<'a> for OwnedCborPath {
+    type Iter = OwnedCborPathIter<'a>;
+
+    fn iter(&'a self) -> Self::Iter {
+        OwnedCborPathIter(self.0.iter())
+    }
+}
+
+pub struct OwnedCborPathIter<'a>(std::slice::Iter<'a, CborOwned>);
+
+impl<'a> Iterator for OwnedCborPathIter<'a> {
+    type Item = CborValue<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(|x| x.value().unwrap())
+    }
+}
+
 impl<'a> Cbor<'a> {
     /// A view onto the underlying bytes
     pub fn as_slice(&self) -> &'a [u8] {
@@ -143,6 +192,10 @@ impl<'a> Cbor<'a> {
     /// The empty iterator will yield the same as calling [`value()`](#method.value).
     pub fn index_iter<'b>(&self, path: impl IntoIterator<Item = &'b str>) -> Option<CborValue<'a>> {
         ptr(self.as_slice(), path.into_iter())
+    }
+
+    pub fn index_cbor<'b>(&self, path: &'b impl CborPath<'b>) -> Option<CborValue<'a>> {
+        ptr2(self.as_slice(), path.iter())
     }
 
     /// Visit the interesting parts of this CBOR item as guided by the given
@@ -245,6 +298,10 @@ impl CborOwned {
     /// The empty iterator will yield the same as calling [`value()`](#method.value).
     pub fn index_iter<'b>(&self, path: impl IntoIterator<Item = &'b str>) -> Option<CborValue> {
         self.borrow().index_iter(path)
+    }
+
+    pub fn index_cbor<'b>(&self, path: &'b impl CborPath<'b>) -> Option<CborValue> {
+        self.borrow().index_cbor(path)
     }
 
     /// Visit the interesting parts of this CBOR item as guided by the given

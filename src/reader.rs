@@ -300,6 +300,42 @@ pub(crate) fn ptr<'b>(
     }
 }
 
+pub(crate) fn ptr2<'b>(
+    mut bytes: &[u8],
+    mut path: impl Iterator<Item = CborValue<'b>>,
+) -> Option<CborValue> {
+    match path.next() {
+        Some(p) => {
+            let v = tagged_value(bytes)?.decoded()?;
+            bytes = v.bytes;
+            match v.kind {
+                Array => {
+                    let idx = p.as_u64()?;
+                    let info = integer(bytes);
+                    let rest = info.map(|x| x.2).unwrap_or_else(|| &bytes[1..]);
+                    let len = info.map(|x| x.0);
+                    let mut iter = Iter::new(rest, len);
+                    ptr2(iter.nth(idx as usize)?.as_slice(), path)
+                }
+                Dict => {
+                    let info = integer(bytes);
+                    let rest = info.map(|x| x.2).unwrap_or_else(|| &bytes[1..]);
+                    let len = info.map(|x| x.0 * 2);
+                    let mut iter = Iter::new(rest, len);
+                    while let (Some(key), Some(value)) = (iter.next(), iter.next()) {
+                        if key.as_slice() == p.bytes {
+                            return ptr2(value.as_slice(), path);
+                        }
+                    }
+                    None
+                }
+                _ => None,
+            }
+        }
+        None => tagged_value(bytes),
+    }
+}
+
 pub(crate) struct Iter<'a>(&'a [u8], Option<u64>);
 
 impl<'a> Iter<'a> {
