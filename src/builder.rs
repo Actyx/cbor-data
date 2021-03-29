@@ -67,6 +67,10 @@ impl<'a> Bytes<'a> {
 /// # assert_eq!(dict2.as_slice(), vec![0xa2u8, 0x61, b'a', 0x0e, 0x61, b'b', 0x20]);
 /// ```
 pub trait Encoder: Writer {
+    fn encode_bool(self, value: bool) -> Self::Output {
+        self.write_bool(value, None)
+    }
+
     /// Encode an unsigned integer of at most 64 bit.
     ///
     /// Also to be used for smaller unsigned integers:

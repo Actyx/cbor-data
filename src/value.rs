@@ -256,6 +256,13 @@ impl<'a> CborValue<'a> {
         self.tags
     }
 
+    pub fn as_bool(&self) -> Option<bool> {
+        match self.decoded()?.kind {
+            Bool(b) => Some(b),
+            _ => None,
+        }
+    }
+
     /// Try to interpret this value as a 64bit unsigned integer.
     ///
     /// Currently does not check floats or big integers.
