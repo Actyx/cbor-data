@@ -36,7 +36,7 @@ impl<'a> CborObject<'a> {
 /// Low-level decoded form of a CBOR item. Use CborValue for inspecting values.
 ///
 /// Beware of the `Neg` variant, which carries `-1 - x`.
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum ValueKind<'a> {
     Pos(u64),
     Neg(u64),
@@ -159,7 +159,7 @@ impl<'a> Iterator for Tags<'a> {
 }
 
 /// Representation of a possibly tagged CBOR data item.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct CborValue<'a> {
     pub tags: Tags<'a>,
     pub kind: ValueKind<'a>,
@@ -222,7 +222,7 @@ impl<'a> Display for CborValue<'a> {
                 write!(*self, "}}")
             }
         }
-        visit(&mut f, self.clone())
+        visit(&mut f, *self)
     }
 }
 
@@ -247,7 +247,7 @@ impl<'a> CborValue<'a> {
         if let (Some(TAG_CBOR_ITEM), Bytes(b)) = (self.tags().last(), &self.kind) {
             tagged_value(b)?.decoded()
         } else {
-            Some(self.clone())
+            Some(*self)
         }
     }
 

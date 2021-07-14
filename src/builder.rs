@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use crate::{canonical::canonicalise, constants::*, reader::Literal, CborOwned};
+use crate::{canonical::canonicalise, constants::*, reader::Literal, Cbor, CborOwned};
 
 enum Bytes<'a> {
     Owned(Vec<u8>),
@@ -178,7 +178,7 @@ pub trait Writer: Sized {
     fn bytes<T>(&mut self, f: impl FnOnce(&mut Vec<u8>) -> T) -> T;
     #[doc(hidden)]
     // internal helper method — do not use!
-    fn to_output(self) -> Self::Output;
+    fn into_output(self) -> Self::Output;
 
     /// Configured maximum array or dict length up to which definite size encoding is used.
     fn max_definite(&self) -> Option<u64>;
@@ -187,46 +187,46 @@ pub trait Writer: Sized {
     /// Tags are from outer to inner.
     fn write_pos(mut self, value: u64, tags: impl IntoIterator<Item = u64>) -> Self::Output {
         self.bytes(|b| write_positive(b, value, tags));
-        self.to_output()
+        self.into_output()
     }
 
     /// Write a negative value of up to 64 bits — the represented number is `-1 - value`.
     /// Tags are from outer to inner.
     fn write_neg(mut self, value: u64, tags: impl IntoIterator<Item = u64>) -> Self::Output {
         self.bytes(|b| write_neg(b, value, tags));
-        self.to_output()
+        self.into_output()
     }
 
     /// Write the given slice as a definite size byte string.
     /// Tags are from outer to inner.
     fn write_bytes(mut self, value: &[u8], tags: impl IntoIterator<Item = u64>) -> Self::Output {
         self.bytes(|b| write_bytes(b, value, tags));
-        self.to_output()
+        self.into_output()
     }
 
     /// Write the given slice as a definite size string.
     /// Tags are from outer to inner.
     fn write_str(mut self, value: &str, tags: impl IntoIterator<Item = u64>) -> Self::Output {
         self.bytes(|b| write_str(b, value, tags));
-        self.to_output()
+        self.into_output()
     }
 
     /// Tags are from outer to inner.
     fn write_bool(mut self, value: bool, tags: impl IntoIterator<Item = u64>) -> Self::Output {
         self.bytes(|b| write_bool(b, value, tags));
-        self.to_output()
+        self.into_output()
     }
 
     /// Tags are from outer to inner.
     fn write_null(mut self, tags: impl IntoIterator<Item = u64>) -> Self::Output {
         self.bytes(|b| write_null(b, tags));
-        self.to_output()
+        self.into_output()
     }
 
     /// Tags are from outer to inner.
     fn write_undefined(mut self, tags: impl IntoIterator<Item = u64>) -> Self::Output {
         self.bytes(|b| write_undefined(b, tags));
-        self.to_output()
+        self.into_output()
     }
 
     /// Write custom literal value — [RFC 7049 §2.3](https://tools.ietf.org/html/rfc7049#section-2.3) is required reading.
@@ -236,7 +236,7 @@ pub trait Writer: Sized {
             write_tags(b, tags);
             write_lit(b, value)
         });
-        self.to_output()
+        self.into_output()
     }
 
     /// Write a nested array using the given closure that receives an array builder.
@@ -291,7 +291,7 @@ pub trait Writer: Sized {
             finish_array(writer.count, b, pos, MAJOR_ARRAY, max_definite);
             ret
         });
-        (self.to_output(), ret)
+        (self.into_output(), ret)
     }
 
     /// Write a nested dict using the given closure that receives a dict builder.
@@ -346,7 +346,7 @@ pub trait Writer: Sized {
             finish_array(writer.0.count, b, pos, MAJOR_DICT, max_definite);
             ret
         });
-        (self.to_output(), ret)
+        (self.into_output(), ret)
     }
 
     /// Interpret the given bytes as a single CBOR item and write it to this builder,
@@ -360,7 +360,7 @@ pub trait Writer: Sized {
             )
         });
         if c.is_some() {
-            Some(self.to_output())
+            Some(self.into_output())
         } else {
             None
         }
@@ -371,7 +371,12 @@ pub trait Writer: Sized {
     /// If those bytes are not valid CBOR you get to keep the pieces!
     fn write_trusting(mut self, bytes: &[u8]) -> Self::Output {
         self.bytes(|b| b.extend_from_slice(bytes));
-        self.to_output()
+        self.into_output()
+    }
+
+    /// Write the given CBOR item
+    fn write_item(self, item: Cbor) -> Self::Output {
+        self.write_trusting(item.as_slice())
     }
 }
 
@@ -473,7 +478,7 @@ impl<'a, O: CborOutput> Writer for CborBuilder<'a, O> {
         f(self.bytes.as_mut())
     }
 
-    fn to_output(self) -> Self::Output {
+    fn into_output(self) -> Self::Output {
         O::output(self.bytes.as_slice())
     }
 
@@ -524,7 +529,7 @@ impl<'a> Writer for ArrayWriter<'a> {
         f(self.bytes.as_mut())
     }
 
-    fn to_output(self) -> Self::Output {
+    fn into_output(self) -> Self::Output {
         self
     }
 
@@ -601,7 +606,7 @@ impl<'a, 'b> Writer for SingleBuilder<'a, 'b> {
         self.0.bytes(f)
     }
 
-    fn to_output(self) -> Self::Output {
+    fn into_output(self) -> Self::Output {
         SingleResult { ph: PhantomData }
     }
 
@@ -620,7 +625,7 @@ where
         (*self).bytes(f)
     }
 
-    fn to_output(self) -> Self::Output {
+    fn into_output(self) -> Self::Output {
         self
     }
 
