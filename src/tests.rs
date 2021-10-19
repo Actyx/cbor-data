@@ -180,22 +180,22 @@ fn numbers() {
     assert_eq!(float("0x3903e7"), -1000f64);
     assert_eq!(string("0x3903e7"), "-1000");
     assert_eq!(float("0xf90000"), 0.0f64);
-    assert_eq!(string("0xf90000"), "0.0");
+    assert_eq!(string("0xf90000"), "0");
     assert_eq!(float("0xf98000"), -0.0f64);
     assert_eq!(string("0xf98000"), "-0.0");
     assert_eq!(float("0xf93c00"), 1.0f64);
-    assert_eq!(string("0xf93c00"), "1.0");
+    assert_eq!(string("0xf93c00"), "1");
     assert_eq!(float("0xfb3ff199999999999a"), 1.1f64);
     assert_eq!(string("0xfb3ff199999999999a"), "1.1");
     assert_eq!(string("0xf93e00"), "1.5");
     assert_eq!(float("0xf97bff"), 65504.0f64);
-    assert_eq!(string("0xf97bff"), "65504.0");
+    assert_eq!(string("0xf97bff"), "65504");
     assert_eq!(float("0xfa47c35000"), 100000.0f64);
-    assert_eq!(string("0xfa47c35000"), "100000.0");
+    assert_eq!(string("0xfa47c35000"), "100000");
     assert_eq!(float("0xfa7f7fffff"), 3.4028234663852886e+38f64);
     assert_eq!(
         string("0xfa7f7fffff"),
-        "340282346638528860000000000000000000000.0"
+        "340282346638528860000000000000000000000"
     );
     assert_eq!(float("0xfb7e37e43c8800759c"), 1.0e+300f64);
     assert_eq!(
@@ -204,14 +204,14 @@ fn numbers() {
     00000000000000000000000000000000000000000000000000000000\
     00000000000000000000000000000000000000000000000000000000\
     00000000000000000000000000000000000000000000000000000000\
-    00000000000000000000000000000000000000000000000000000000000000.0"
+    00000000000000000000000000000000000000000000000000000000000000"
     );
     assert_eq!(float("0xf90001"), 5.960464477539063e-8f64);
     assert_eq!(string("0xf90001"), "0.00000005960464477539063");
     assert_eq!(float("0xf90400"), 0.00006103515625f64);
     assert_eq!(string("0xf90400"), "0.00006103515625");
     assert_eq!(float("0xf9c400"), -4.0f64);
-    assert_eq!(string("0xf9c400"), "-4.0");
+    assert_eq!(string("0xf9c400"), "-4");
     assert_eq!(float("0xfbc010666666666666"), -4.1f64);
     assert_eq!(string("0xfbc010666666666666"), "-4.1");
     assert_eq!(float("0xf97c00"), f64::INFINITY);
@@ -620,5 +620,8 @@ fn roundtrip_non_string_map() {
         });
         b.write_null(Some(12345));
     });
-    assert_eq!(complex.to_string(), "4|[5, {\"1\": -667, 2: 0x646566646566}, [false, \"hello\"], 12345|null]");
+    assert_eq!(
+        complex.to_string(),
+        "4|[5, {\"1\": -667, 2: 0x646566646566}, [false, \"hello\"], 12345|null]"
+    );
 }
