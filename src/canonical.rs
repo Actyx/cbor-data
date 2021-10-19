@@ -145,14 +145,12 @@ fn canonicalise_dict<'a>(bytes: &'a [u8], builder: &mut DictWriter) -> Option<&'
                 builder.with_key(key, |b| b.write_neg(neg, tags));
             }
             MAJOR_BYTES => {
+                let decoded = update(bytes, value_bytes(b, false))?;
                 if tags.single() == Some(TAG_CBOR_ITEM) {
-                    // drop CBOR item encoding wrapper - may choose to use these later for more efficient skipping
-                    let decoded = update(bytes, value_bytes(b, false))?;
                     // the line above has advanced the main loop’s reference, here we advance a temporary one
                     one(&mut decoded.as_ref(), key, builder)?
                 } else {
-                    let value = update(bytes, value_bytes(b, false))?;
-                    builder.with_key(key, |b| b.write_bytes(value.as_ref(), tags));
+                    builder.with_key(key, |b| b.write_bytes(decoded.as_ref(), tags));
                 }
             }
             MAJOR_STR => {

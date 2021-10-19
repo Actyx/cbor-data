@@ -61,7 +61,7 @@ impl<'a> Display for ValueKind<'a> {
                 if *x == 0f64 && x.is_sign_negative() {
                     write!(f, "-0.0")
                 } else {
-                    write!(f, "{:?}", x)
+                    write!(f, "{}", x)
                 }
             }
             Str(s) => write!(f, "\"{}\"", s.escape_debug()),
@@ -408,9 +408,20 @@ fn bytes_to_float(bytes: &[u8]) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use crate::CborOwned;
+    use crate::{CborBuilder, CborOwned, Encoder};
 
     use super::*;
+
+    #[test]
+    fn display() {
+        fn to_cbor_str(f: f64) -> String {
+            format!("{}", CborBuilder::new().encode_f64(f))
+        }
+        assert_eq!(to_cbor_str(1.0), "1");
+        assert_eq!(to_cbor_str(-1.1), "-1.1");
+        assert_eq!(to_cbor_str(0.0), "0");
+        assert_eq!(to_cbor_str(-0.0), "-0.0");
+    }
 
     #[test]
     fn base64string() {

@@ -107,7 +107,7 @@ impl<'a> Cbor<'a> {
 
 impl<'a> AsRef<[u8]> for Cbor<'a> {
     fn as_ref(&self) -> &[u8] {
-        &self.0
+        self.0
     }
 }
 
