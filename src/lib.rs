@@ -44,6 +44,7 @@ pub use visit::Visitor;
 
 use canonical::canonicalise;
 use reader::{ptr, tagged_value};
+use smallvec::SmallVec;
 use visit::visit;
 
 /// Wrapper around a byte slice that allows parsing as CBOR value.
@@ -170,7 +171,8 @@ impl<'a> Cbor<'a> {
 /// Canonicalisation rqeuires an intermediary data buffer, which can be supplied (and reused)
 /// by the caller to save on allocations.
 #[derive(PartialEq, Clone)]
-pub struct CborOwned(Vec<u8>);
+// 16 bytes is the smallest that makes sense on 64bit platforms (size of a fat pointer)
+pub struct CborOwned(SmallVec<[u8; 16]>);
 
 impl Debug for CborOwned {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -190,7 +192,7 @@ impl CborOwned {
     /// No checks on the integrity are made, indexing methods may panic if encoded lengths are out of bound.
     /// If you want to carefully treat data obtained from unreliable sources, prefer
     /// [`canonical()`](#method.canonical).
-    pub fn trusting(bytes: impl Into<Vec<u8>>) -> Self {
+    pub fn trusting(bytes: impl Into<SmallVec<[u8; 16]>>) -> Self {
         Self(bytes.into())
     }
 

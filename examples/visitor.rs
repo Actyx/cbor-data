@@ -16,7 +16,8 @@ impl<'a> Visitor<'a, ()> for X<'a> {
 }
 
 fn main() {
-    let cbor = CborOwned::trusting([0xbf, 0x63, 0x46, 0x75, 0x6e, 0x63, 0x41, 0x6d, 0x74, 0xff]);
+    let cbor =
+        CborOwned::trusting(&[0xbf, 0x63, 0x46, 0x75, 0x6e, 0x63, 0x41, 0x6d, 0x74, 0xff][..]);
     let mut visitor = X(Vec::new());
     println!("{}", cbor.visit(&mut visitor).unwrap());
     println!("{:?}", visitor.0);
