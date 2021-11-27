@@ -1,6 +1,9 @@
-use std::cell::RefCell;
+use std::{borrow::Borrow, cell::RefCell};
 
-use cbor_data::{constants::TAG_EPOCH, Cbor, CborBuilder, CborOwned, Encoder, Writer};
+use cbor_data::{
+    constants::TAG_EPOCH, index_str, Cbor, CborBuilder, CborOwned, Encoder, ItemKind, Visitor,
+    Writer,
+};
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::{random, thread_rng, Rng};
 
@@ -36,22 +39,63 @@ fn create_cbor() -> CborOwned {
     })
 }
 
-fn make_new_object(obj: Cbor) -> CborOwned {
+fn make_new_object(obj: &Cbor) -> CborOwned {
     CborBuilder::default().write_dict(None, |b| {
-        b.with_key("start", |b| {
-            b.write_pos(obj.index("started").unwrap().as_u64().unwrap(), None)
-        });
-        b.with_key("who", |b| {
-            b.write_str(obj.index("byWhom").unwrap().as_str().unwrap(), None)
-        });
-        b.with_key("duration", |b| {
-            b.write_pos(
-                obj.index("stopped").unwrap().as_u64().unwrap()
-                    - obj.index("started").unwrap().as_u64().unwrap(),
-                None,
-            )
-        });
+        let mut started = 0;
+        if let ItemKind::Pos(x) = obj.index(index_str("started").unwrap()).unwrap().item() {
+            started = x;
+            b.with_key("start", |b| b.write_pos(x, None));
+        }
+        if let ItemKind::Str(s) = obj.index(index_str("byWhom").unwrap()).unwrap().item() {
+            b.with_key("who", |b| b.write_str(s.as_cow().as_ref(), None));
+        }
+        if let ItemKind::Pos(stopped) = obj.index(index_str("stopped").unwrap()).unwrap().item() {
+            b.with_key("duration", |b| b.write_pos(stopped - started, None));
+        }
     })
+}
+
+struct Depth {
+    curr: usize,
+    max: usize,
+}
+
+impl Depth {
+    pub fn new() -> Self {
+        Self { curr: 1, max: 1 }
+    }
+}
+
+impl<'a> Visitor<'a, ()> for Depth {
+    fn visit_array_begin(
+        &mut self,
+        _array: cbor_data::TaggedItem<'a>,
+        _size: Option<u64>,
+    ) -> Result<bool, ()> {
+        self.curr += 1;
+        self.max = self.curr.max(self.max);
+        Ok(true)
+    }
+
+    fn visit_array_end(&mut self, _array: cbor_data::TaggedItem<'a>) -> Result<(), ()> {
+        self.curr -= 1;
+        Ok(())
+    }
+
+    fn visit_dict_begin(
+        &mut self,
+        _dict: cbor_data::TaggedItem<'a>,
+        _size: Option<u64>,
+    ) -> Result<bool, ()> {
+        self.curr += 1;
+        self.max = self.curr.max(self.max);
+        Ok(true)
+    }
+
+    fn visit_dict_end(&mut self, _dict: cbor_data::TaggedItem<'a>) -> Result<(), ()> {
+        self.curr -= 1;
+        Ok(())
+    }
 }
 
 fn extract(c: &mut Criterion) {
@@ -59,14 +103,18 @@ fn extract(c: &mut Criterion) {
     c.bench_function("transform object", |b| {
         b.iter_batched_ref(
             create_cbor,
-            |o| make_new_object(o.borrow()),
+            |o| make_new_object((*o).borrow()),
             criterion::BatchSize::SmallInput,
         )
     });
     c.bench_function("as_object", |b| {
         b.iter_batched_ref(
             create_cbor,
-            |o| Some(o.value()?.as_object()?.depth()),
+            |o| {
+                let mut d = Depth::new();
+                o.visit(&mut d).unwrap();
+                d.max
+            },
             criterion::BatchSize::SmallInput,
         )
     });

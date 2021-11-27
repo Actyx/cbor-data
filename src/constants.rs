@@ -15,7 +15,7 @@ pub const MAJOR_TAG: u8 = 6;
 /// Major type 7: simple values and floating-point numbers
 pub const MAJOR_LIT: u8 = 7;
 
-/// String tag: ISO8601 timestamp, see [RFC 4287 §3.3](https://tools.ietf.org/html/rfc4287#section-3.3)
+/// String tag: ISO8601 timestamp, see [RFC 4287 §3.3](https://www.rfc-editor.org/rfc/rfc4287#section-3.3)
 pub const TAG_ISO8601: u64 = 0;
 /// Integer or floating-point tag: seconds since the Unix epoch (possibly negative)
 pub const TAG_EPOCH: u64 = 1;
@@ -29,15 +29,15 @@ pub const TAG_BIGDECIMAL: u64 = 4;
 pub const TAG_BIGFLOAT: u64 = 5;
 /// Byte string tag: contents shall be interpreted as nested CBOR item
 pub const TAG_CBOR_ITEM: u64 = 24;
-/// String tag: [RFC 3986](https://tools.ietf.org/html/rfc3986) URI
+/// String tag: [RFC 3986](https://www.rfc-editor.org/rfc/rfc3986) URI
 pub const TAG_URI: u64 = 32;
-/// String tag: base64url encoded byte string, see [RFC 4648](https://tools.ietf.org/html/rfc4648)
+/// String tag: base64url encoded byte string, see [RFC 4648](https://www.rfc-editor.org/rfc/rfc4648)
 pub const TAG_BASE64URL: u64 = 33;
-/// String tag: base64 encoded byte string, see [RFC 4648](https://tools.ietf.org/html/rfc4648)
+/// String tag: base64 encoded byte string, see [RFC 4648](https://www.rfc-editor.org/rfc/rfc4648)
 pub const TAG_BASE64: u64 = 34;
 /// String tag: regular expression (PCRE or ECMA)
 pub const TAG_REGEX: u64 = 35;
-/// String tag: mime encoded payload, including headers, see [RFC 2045](https://tools.ietf.org/html/rfc2045)
+/// String tag: mime encoded payload, including headers, see [RFC 2045](https://www.rfc-editor.org/rfc/rfc2045)
 pub const TAG_MIME: u64 = 36;
 /// Marker for tagging the top-level CBOR item such that it cannot be misinterpreted as JSON
 pub const TAG_CBOR_MARKER: u64 = 55799;

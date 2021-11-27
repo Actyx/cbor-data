@@ -229,7 +229,7 @@ pub trait Writer: Sized {
         self.into_output()
     }
 
-    /// Write custom literal value — [RFC 7049 §2.3](https://tools.ietf.org/html/rfc7049#section-2.3) is required reading.
+    /// Write custom literal value — [RFC 8949 §3.3](https://www.rfc-editor.org/rfc/rfc8949#section-3.3) is required reading.
     /// Tags are from outer to inner.
     fn write_lit(mut self, value: Literal, tags: impl IntoIterator<Item = u64>) -> Self::Output {
         self.bytes(|b| {
@@ -359,7 +359,7 @@ pub trait Writer: Sized {
                 CborBuilder::append_to(b).with_max_definite_size(max_definite),
             )
         });
-        if c.is_some() {
+        if c.is_ok() {
             Some(self.into_output())
         } else {
             None
@@ -375,7 +375,7 @@ pub trait Writer: Sized {
     }
 
     /// Write the given CBOR item
-    fn write_item(self, item: Cbor) -> Self::Output {
+    fn write_item(self, item: &Cbor) -> Self::Output {
         self.write_trusting(item.as_slice())
     }
 }
@@ -390,7 +390,7 @@ pub struct WithOutput;
 impl CborOutput for WithOutput {
     type Output = CborOwned;
     fn output(bytes: &[u8]) -> Self::Output {
-        CborOwned::trusting(bytes)
+        CborOwned::unchecked(bytes)
     }
 }
 /// Marker type for builders that only append to a provided vector
@@ -581,6 +581,37 @@ impl<'a> DictWriter<'a> {
         k(SingleBuilder(&mut self.0.non_tracking(self.0.max_definite)));
         v(SingleBuilder(&mut self.0));
         self
+    }
+
+    pub fn try_write_pair<E>(
+        &mut self,
+        f: impl FnOnce(KeyBuilder<'_, '_>) -> Result<SingleResult, E>,
+    ) -> Result<&mut Self, E> {
+        f(KeyBuilder(&mut self.0))?;
+        Ok(self)
+    }
+}
+
+/// Builder for the first step of [`try_write_pair`](struct.DictWriter.html#method.try_write_pair)
+///
+/// This builder can be used for exactly one item (which may be a complex one, like an array)
+/// and returns a [`SingleBuilder`](struct.SingleBuilder.html) that needs to be used to write
+/// the value for this dictionary entry.
+pub struct KeyBuilder<'a, 'b>(&'b mut ArrayWriter<'a>);
+
+impl<'a, 'b> Writer for KeyBuilder<'a, 'b> {
+    type Output = SingleBuilder<'a, 'b>;
+
+    fn bytes<T>(&mut self, f: impl FnOnce(&mut Vec<u8>) -> T) -> T {
+        self.0.non_tracking(self.0.max_definite).bytes(f)
+    }
+
+    fn into_output(self) -> Self::Output {
+        SingleBuilder(self.0)
+    }
+
+    fn max_definite(&self) -> Option<u64> {
+        self.0.max_definite
     }
 }
 

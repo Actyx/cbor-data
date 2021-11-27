@@ -1,10 +1,4 @@
-use crate::{
-    constants::*,
-    value::Tags,
-    Cbor, CborValue,
-    ValueKind::{self, *},
-};
-use std::{borrow::Cow, str::FromStr};
+use crate::{constants::*, Tags};
 
 macro_rules! check {
     ($e:expr) => {
@@ -102,43 +96,14 @@ pub(crate) fn integer(bytes: &[u8]) -> Option<(u64, &[u8], &[u8])> {
 #[inline(always)]
 pub(crate) fn indefinite(bytes: &[u8]) -> Option<(u64, &[u8], &[u8])> {
     if bytes[0] & 31 == INDEFINITE_SIZE {
+        // since an item takes at least 1 byte, u64::MAX is an impossible size
         Some((u64::MAX, &bytes[..1], &bytes[1..]))
     } else {
         None
     }
 }
 
-pub(crate) fn value_bytes(bytes: &[u8], skip: bool) -> Option<(Cow<[u8]>, &[u8])> {
-    let m = major(bytes)?;
-    let (len, _, mut rest) = integer(bytes).or_else(|| indefinite(bytes))?;
-    if len == u64::MAX {
-        // marker for indefinite size
-        let mut b = Vec::new();
-        while *rest.get(0)? != STOP_BYTE {
-            if major(rest)? != m {
-                return None;
-            }
-            let (len, _, r) = integer(rest)?;
-            if len == u64::MAX || len as usize > r.len() {
-                return None;
-            }
-            let len = len as usize;
-            if !skip {
-                b.extend_from_slice(&r[..len]);
-            }
-            rest = &r[len..];
-        }
-        Some((Cow::Owned(b), rest))
-    } else {
-        let len = len as usize;
-        check!(
-            rest.len() >= len,
-            Some((Cow::Borrowed(&rest[..len]), &rest[len..]))
-        )
-    }
-}
-
-fn float(bytes: &[u8]) -> Option<(f64, &[u8], &[u8])> {
+pub(crate) fn float(bytes: &[u8]) -> Option<(f64, &[u8], &[u8])> {
     integer(bytes).and_then(|(x, b, rest)| match b.len() {
         3 => Some((half::f16::from_bits(x as u16).to_f64(), b, rest)),
         5 => Some((f32::from_bits(x as u32) as f64, b, rest)),
@@ -147,212 +112,47 @@ fn float(bytes: &[u8]) -> Option<(f64, &[u8], &[u8])> {
     })
 }
 
-fn string(bytes: &[u8]) -> Option<(Cow<str>, &[u8])> {
-    value_bytes(bytes, false).and_then(|(bytes, rest)| match bytes {
-        Cow::Borrowed(b) => std::str::from_utf8(b)
-            .ok()
-            .map(|s| (Cow::Borrowed(s), rest)),
-        Cow::Owned(b) => String::from_utf8(b).ok().map(|s| (Cow::Owned(s), rest)),
-    })
-}
-
-fn skip(bytes: &[u8]) -> Option<&[u8]> {
-    match major(bytes)? {
-        MAJOR_POS | MAJOR_NEG | MAJOR_LIT => integer(bytes).map(|(_, _, rest)| rest),
-        MAJOR_STR | MAJOR_BYTES => value_bytes(bytes, true).map(|(_, rest)| rest),
-        MAJOR_TAG => integer(bytes).and_then(|(_, _, rest)| skip(rest)),
-        MAJOR_ARRAY => {
-            let (len, _, mut rest) = integer(bytes).or_else(|| indefinite(bytes))?;
-            if len == u64::MAX {
-                // marker for indefinite size
-                while rest[0] != STOP_BYTE {
-                    rest = skip(rest)?;
-                }
-                rest = &rest[1..];
-            } else {
-                for _ in 0..len {
-                    rest = skip(rest)?;
-                }
-            }
-            Some(rest)
-        }
-        MAJOR_DICT => {
-            let (len, _, mut rest) = integer(bytes).or_else(|| indefinite(bytes))?;
-            if len == u64::MAX {
-                // marker for indefinite size
-                while rest[0] != STOP_BYTE {
-                    rest = skip(rest)?;
-                    rest = skip(rest)?;
-                }
-                rest = &rest[1..];
-            } else {
-                for _ in 0..len {
-                    rest = skip(rest)?;
-                    rest = skip(rest)?;
-                }
-            }
-            Some(rest)
-        }
-        _ => unreachable!(),
-    }
-}
-
 pub(crate) fn tags(bytes: &[u8]) -> Option<(Tags, &[u8])> {
-    Tags::new(bytes)
-}
-
-pub(crate) enum ValueResult<'a> {
-    V(ValueKind<'a>),
-    S(String),
-    B(Vec<u8>),
-}
-
-pub(crate) fn value(bytes: &[u8]) -> Option<(ValueResult, &[u8], &[u8])> {
-    use ValueResult::*;
-
-    match major(bytes)? {
-        MAJOR_POS => integer(bytes).map(|(k, b, r)| (V(Pos(k)), b, r)),
-        MAJOR_NEG => integer(bytes).map(|(k, b, r)| (V(Neg(k)), b, r)),
-        MAJOR_BYTES => match value_bytes(bytes, false)? {
-            (Cow::Borrowed(s), rest) => {
-                Some((V(Bytes(s)), &bytes[..(bytes.len() - rest.len())], rest))
-            }
-            (Cow::Owned(s), rest) => Some((B(s), &bytes[..(bytes.len() - rest.len())], rest)),
-        },
-        MAJOR_STR => match string(bytes)? {
-            (Cow::Borrowed(s), rest) => {
-                Some((V(Str(s)), &bytes[..(bytes.len() - rest.len())], rest))
-            }
-            (Cow::Owned(s), rest) => Some((S(s), &bytes[..(bytes.len() - rest.len())], rest)),
-        },
-        MAJOR_LIT => match bytes[0] & 31 {
-            LIT_FALSE => Some((V(Bool(false)), &bytes[..1], &bytes[1..])),
-            LIT_TRUE => Some((V(Bool(true)), &bytes[..1], &bytes[1..])),
-            LIT_NULL => Some((V(Null), &bytes[..1], &bytes[1..])),
-            LIT_UNDEFINED => Some((V(Undefined), &bytes[..1], &bytes[1..])),
-            LIT_SIMPLE => Some((V(Simple(bytes[1])), &bytes[..2], &bytes[2..])),
-            LIT_FLOAT16 | LIT_FLOAT32 | LIT_FLOAT64 => {
-                float(bytes).map(|(k, b, r)| (V(Float(k)), b, r))
-            }
-            x if x < 24 => Some((V(Simple(x)), &bytes[..1], &bytes[1..])),
-            _ => None,
-        },
-        MAJOR_TAG => integer(bytes).and_then(|(_, _, rest)| value(rest)),
-        MAJOR_ARRAY => {
-            skip(bytes).map(|rest| (V(Array), &bytes[..(bytes.len() - rest.len())], rest))
+    let mut remaining = bytes;
+    while let Some(value) = remaining.get(0) {
+        if (*value >> 5) != MAJOR_TAG {
+            break;
         }
-        MAJOR_DICT => skip(bytes).map(|rest| (V(Dict), &bytes[..(bytes.len() - rest.len())], rest)),
-        _ => None,
+        let (_, _, r) = integer(remaining)?;
+        remaining = r;
     }
-}
-
-pub(crate) fn tagged_value(bytes: &[u8]) -> Option<CborValue> {
-    let (tags, rest) = tags(bytes)?;
-    let (kind, bytes, _rest) = value(rest)?;
-    if let ValueResult::V(kind) = kind {
-        Some(CborValue { tags, kind, bytes })
-    } else {
-        None
-    }
-}
-
-pub(crate) fn ptr<'b>(
-    mut bytes: &[u8],
-    mut path: impl Iterator<Item = &'b str>,
-) -> Option<CborValue> {
-    match path.next() {
-        Some(p) => {
-            let v = tagged_value(bytes)?.decoded()?;
-            bytes = v.bytes;
-            match v.kind {
-                Array => {
-                    let idx = u64::from_str(p).ok()?;
-
-                    let info = integer(bytes);
-                    let rest = info.map(|x| x.2).unwrap_or_else(|| &bytes[1..]);
-                    let len = info.map(|x| x.0);
-                    let mut iter = Iter::new(rest, len);
-
-                    ptr(iter.nth(idx as usize)?.as_slice(), path)
-                }
-                Dict => {
-                    let info = integer(bytes);
-                    let rest = info.map(|x| x.2).unwrap_or_else(|| &bytes[1..]);
-                    let len = info.map(|x| x.0 * 2);
-                    let mut iter = Iter::new(rest, len);
-
-                    while let Some(key) = iter.next() {
-                        if let ValueResult::V(Str(s)) = value(key.as_slice())?.0 {
-                            let v = iter.next()?;
-                            if s == p {
-                                return ptr(v.as_slice(), path);
-                            }
-                        } else {
-                            return None;
-                        }
-                    }
-                    None
-                }
-                _ => None,
-            }
-        }
-        None => tagged_value(bytes),
-    }
-}
-
-pub(crate) struct Iter<'a>(&'a [u8], Option<u64>);
-
-impl<'a> Iter<'a> {
-    pub(crate) fn new(bytes: &'a [u8], len: Option<u64>) -> Self {
-        Self(bytes, len)
-    }
-}
-
-impl<'a> Iterator for Iter<'a> {
-    type Item = Cbor<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let Iter(b, elems) = self;
-        if *elems == Some(0) || *elems == None && *b.get(0)? == STOP_BYTE {
-            None
-        } else {
-            let rest = skip(b)?;
-            let bytes = &b[..b.len() - rest.len()];
-            if let Some(x) = elems.as_mut() {
-                *x -= 1;
-            }
-            *b = rest;
-            Some(Cbor::trusting(bytes))
-        }
-    }
+    let len = bytes.len() - remaining.len();
+    Some((Tags::new(&bytes[..len]), remaining))
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{Cbor, CborOwned};
-
-    use super::*;
+    use crate::{index_str, Cbor, CborOwned, ItemKind};
     use serde_json::json;
 
-    fn sample() -> Vec<u8> {
-        serde_cbor::to_vec(&json!({
-            "a": {
-                "b": 12
-            },
-            "c": null
-        }))
+    fn sample() -> CborOwned {
+        CborOwned::canonical(
+            serde_cbor::to_vec(&json!({
+                "a": {
+                    "b": 12
+                },
+                "c": null
+            }))
+            .unwrap(),
+            false,
+        )
         .unwrap()
     }
 
     #[test]
     fn must_read_serde() {
         assert_eq!(
-            ptr(&*sample(), "a.b".split('.')).and_then(|x| x.as_u64()),
-            Some(12)
+            sample().index(index_str("a.b").unwrap()).unwrap().item(),
+            ItemKind::Pos(12)
         );
         assert_eq!(
-            ptr(&*sample(), "c".split('.')),
-            Some(CborValue::fake(None, Null))
+            sample().index(index_str("c").unwrap()).unwrap().item(),
+            ItemKind::Null
         );
     }
 
@@ -379,26 +179,28 @@ mod tests {
         ];
 
         for (res, bytes) in cases {
-            let cbor = Cbor::trusting(&*bytes);
-            assert_eq!(cbor.value(), None);
+            let cbor = Cbor::unchecked(&*bytes);
+            assert!(
+                matches!(cbor.item(), ItemKind::Str(s) if s == res),
+                "value was {:?}",
+                cbor.item()
+            );
 
-            let cbor = CborOwned::canonical(bytes).unwrap();
-            assert_eq!(cbor.value(), Some(CborValue::fake(None, Str(res))));
+            let cbor = CborOwned::canonical(bytes, false).unwrap();
+            assert!(
+                matches!(cbor.item(), ItemKind::Str(s) if s.as_str().unwrap() == res),
+                "value was {:?}",
+                cbor.item()
+            );
         }
     }
 
     #[test]
     fn float() {
         let bytes = vec![0xfau8, 0, 0, 51, 17];
-        let cbor = Cbor::trusting(&*bytes);
-        assert_eq!(
-            cbor.value(),
-            Some(CborValue::fake(None, Float(1.8319174824118334e-41)))
-        );
-        let cbor = CborOwned::canonical(bytes).unwrap();
-        assert_eq!(
-            cbor.value(),
-            Some(CborValue::fake(None, Float(1.8319174824118334e-41)))
-        );
+        let cbor = Cbor::unchecked(&*bytes);
+        assert_eq!(cbor.item(), ItemKind::Float(1.8319174824118334e-41));
+        let cbor = CborOwned::canonical(bytes, false).unwrap();
+        assert_eq!(cbor.item(), ItemKind::Float(1.8319174824118334e-41));
     }
 }
