@@ -1,8 +1,8 @@
 use super::iterators::{ArrayIter, BytesIter, DictIter, StringIter};
-use crate::{constants::TAG_CBOR_ITEM, Cbor, DebugUsingDisplay, Tags};
+use crate::{constants::TAG_CBOR_ITEM, Cbor, CborValue, DebugUsingDisplay, Tags};
 use std::fmt::{Debug, Display, Formatter, Write};
 
-/// Low-level encoding of a CBOR item. Use [`CborValue`](enum.CborValue.html) for inspecting values.
+/// Low-level encoding of a CBOR item. Use [`CborValue`](value/enum.CborValue.html) for inspecting values.
 ///
 /// You can obtain this representation from [`Cbor::kind`](struct.Cbor.html#method.kind) or
 /// [`TaggedItem::kind`](struct.TaggedItem.html#method.kind).
@@ -211,6 +211,15 @@ impl<'a> TaggedItem<'a> {
     pub fn new(cbor: &'a Cbor) -> Self {
         let (tags, kind) = super::tagged_item(cbor.as_ref());
         Self { tags, kind, cbor }
+    }
+
+    /// Interpret the CBOR item at a higher level
+    ///
+    /// While [`kind`](#method.kind) gives you precise information on how the item is encoded,
+    /// this method interprets the tag-based encoding according to the standard, adding for example
+    /// big integers, decimals, and floats, or turning base64-encoded text strings into binary strings.
+    pub fn decode(self) -> CborValue<'a> {
+        CborValue::new(self)
     }
 
     /// An iterator over the tags of this item

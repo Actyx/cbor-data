@@ -17,7 +17,7 @@ them.
 
 Regarding the interpretation of parsed data you have the option of inspecting the particular
 encoding (by pattern matching on [`ItemKind`](enum.ItemKind.html)) or inspecting the higher-level
-[`CborValue`](enum.CborValue.html). In the latter case, many binary representations may yield the
+[`CborValue`](value/enum.CborValue.html). In the latter case, many binary representations may yield the
 same value, e.g. when asking for an integer the result may stem from a non-optimal encoding
 (like writing 57 as 64-bit value) or from a BigDecimal with mantissa 570 and exponent -1.
 
@@ -39,18 +39,27 @@ let cbor = CborBuilder::new().encode_dict(|builder| {
 });
 
 // access properties
-use cbor_data::{PathElement, index_str, CborValue};
-use std::borrow::Cow::Borrowed;
+use cbor_data::{PathElement, index_str, CborValue, value::Timestamp};
+use std::borrow::Cow::{self, Borrowed};
 
 let item = cbor.index(index_str("name")).unwrap();
 assert_eq!(item.decode(), CborValue::Str(Borrowed("Actyx")));
 
-// decoding tries referencing source bytes where possible, use make_static to break ties
-let d = cbor.index([PathElement::String(Borrowed("founded"))]).unwrap().decode().make_static();
-assert_eq!(d, CborValue::Timestamp { unix_epoch: 1455192000, nanos: 0, tz_sec_east: 3600 });
+// decoding references source bytes where possible, use make_static() to break ties
+let decoded =
+    cbor.index([PathElement::String(Borrowed("founded"))]).unwrap().decode().make_static();
+
+// if you know what you’re looking for, you can use the as_* or to_* methods:
+let ts = decoded.as_timestamp().unwrap();
+assert_eq!(ts.unix_epoch(), 1_455_192_000);
+assert_eq!(ts.nanos(), 0);
+assert_eq!(ts.tz_sec_east(), 3600);
 
 let item = cbor.index(index_str("founders[1]")).unwrap();
-assert_eq!(item.decode(), CborValue::Str(Borrowed("Maximilian Fischer")));
+let name = item.decode().to_str();
+// to_str() returns an Option<Cow<str>> to allow you to avoid allocations
+// (i.e. this still takes the string’s bytes from `&cbor` in this case)
+assert_eq!(name.as_ref().map(Cow::as_ref), Some("Maximilian Fischer"));
 
 // access low-level encoding
 use cbor_data::ItemKind;

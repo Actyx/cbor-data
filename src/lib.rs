@@ -14,7 +14,7 @@ pub mod constants;
 mod error;
 mod reader;
 mod validated;
-mod value;
+pub mod value;
 mod visit;
 
 #[cfg(test)]
@@ -32,7 +32,7 @@ pub use validated::{
     iterators::{ArrayIter, BytesIter, DictIter, StringIter},
     tags::Tags,
 };
-pub use value::{CborValue, Number};
+pub use value::CborValue;
 pub use visit::Visitor;
 
 use canonical::canonicalise;
@@ -47,7 +47,7 @@ use visit::visit;
 /// When interpreting CBOR messages from the outside (e.g. from the network) it is
 /// advisable to ingest those using the [`CborOwned::canonical`](struct.CborOwned.html#method.canonical) constructor.
 /// In case the message was encoded for example using [`CborBuilder`](./struct.CborBuilder.html)
-/// it is sufficient to use the [`trusting`](#method.trusting) constructor.
+/// it is sufficient to use the [`unchecked`](#method.unchecked) constructor.
 ///
 /// The Display implementation adheres to the [diagnostic notation](https://datatracker.ietf.org/doc/html/rfc8949#section-8).
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -253,7 +253,7 @@ impl Cbor {
 
     /// Interpret the CBOR item at a higher level
     ///
-    /// While [`item`](#method.item) gives you precise information on how the item is encoded,
+    /// While [`kind`](#method.kind) gives you precise information on how the item is encoded,
     /// this method interprets the tag-based encoding according to the standard, adding for example
     /// big integers, decimals, and floats, or turning base64-encoded text strings into binary strings.
     pub fn decode(&self) -> CborValue<'_> {
@@ -455,7 +455,7 @@ pub fn try_index_str(s: &str) -> Option<IndexStr<'_>> {
 ///
 /// # Panics
 ///
-/// Panics if the string is not valid, see [`try_index_str`](#method.try_index_str) for the
+/// Panics if the string is not valid, see [`try_index_str`](fn.try_index_str.html) for the
 /// details and a non-panicking version.
 pub fn index_str(s: &str) -> IndexStr<'_> {
     try_index_str(s).expect("invalid index string")
