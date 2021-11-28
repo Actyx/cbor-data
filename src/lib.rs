@@ -457,6 +457,19 @@ pub fn try_index_str(s: &str) -> Option<IndexStr<'_>> {
 ///
 /// Panics if the string is not valid, see [`try_index_str`](fn.try_index_str.html) for the
 /// details and a non-panicking version.
+///
+/// # Example
+///
+/// ```rust
+/// use cbor_data::{CborBuilder, index_str, Encoder, value::Number};
+///
+/// let cbor = CborBuilder::new().encode_array(|builder| {
+///     builder.encode_u64(42);
+/// });
+///
+/// let item = cbor.index(index_str("[0]")).unwrap();
+/// assert_eq!(item.decode().to_number().unwrap(), Number::Int(42));
+/// ```
 pub fn index_str(s: &str) -> IndexStr<'_> {
     try_index_str(s).expect("invalid index string")
 }
