@@ -1,5 +1,5 @@
 use self::{CborValue::*, Number::*};
-use crate::{constants::*, Cbor, ItemKind, TaggedItem};
+use crate::{constants::*, Cbor, CborOwned, ItemKind, TaggedItem};
 use std::{
     borrow::Cow,
     collections::{btree_map::Entry, BTreeMap},
@@ -8,11 +8,14 @@ use std::{
 
 /// Lifted navigation structure for a CborValue.
 ///
-/// You can obtain this using [`CborValue::as_object()`](struct.CborValue.html#method.as_object).
+/// You can obtain this using [`Cbor::decode()`](struct.Cbor.html#method.decode).
+/// This will reference existing bytes as much as possible, but in some cases it
+/// has to allocate, e.g. when some needed slices are not contiguous in the underlying
+/// `Cbor`.
 #[derive(Debug, Clone, PartialEq)]
 pub enum CborValue<'a> {
-    Array(Vec<TaggedItem<'a>>),
-    Dict(BTreeMap<&'a Cbor, TaggedItem<'a>>),
+    Array(Vec<Cow<'a, Cbor>>),
+    Dict(BTreeMap<Cow<'a, Cbor>, Cow<'a, Cbor>>),
     Undefined,
     Null,
     Bool(bool),
@@ -95,7 +98,7 @@ impl<'a> CborValue<'a> {
             }
             Some(t @ (TAG_BIGDECIMAL | TAG_BIGFLOAT)) => {
                 let (exp, mant) = arr!(item, a, b);
-                let exponent = match exp.item() {
+                let exponent = match exp.kind() {
                     ItemKind::Pos(x) => i128::from(x),
                     ItemKind::Neg(x) => -1 - i128::from(x),
                     _ => return Invalid,
@@ -124,10 +127,10 @@ impl<'a> CborValue<'a> {
                             }
                         }
                         Decimal {
-                            exponent,
+                            exponent: e,
                             mantissa,
                             inverted,
-                        } if exponent == 0 => {
+                        } if e == 0 => {
                             if t == TAG_BIGDECIMAL {
                                 Number(Decimal {
                                     exponent,
@@ -148,6 +151,30 @@ impl<'a> CborValue<'a> {
                     Invalid
                 }
             }
+            Some(TAG_CBOR_ITEM) => {
+                if let ItemKind::Bytes(b) = item.kind() {
+                    if let Some(b) = b.as_slice() {
+                        Cbor::unchecked(b).decode()
+                    } else {
+                        CborOwned::unchecked(b.to_vec()).decode().make_static()
+                    }
+                } else {
+                    Invalid
+                }
+            }
+            Some(t @ (TAG_BASE64 | TAG_BASE64URL)) => {
+                if let ItemKind::Str(s) = item.kind() {
+                    let s = s.as_cow();
+                    let b = if t == TAG_BASE64 {
+                        base64::decode(s.as_bytes())
+                    } else {
+                        base64::decode_config(s.as_bytes(), base64::URL_SAFE_NO_PAD)
+                    };
+                    b.map(|bytes| Bytes(Cow::Owned(bytes))).unwrap_or(Invalid)
+                } else {
+                    Invalid
+                }
+            }
             None => match item.kind() {
                 ItemKind::Pos(x) => Number(Int(x.into())),
                 ItemKind::Neg(x) => Number(Int(-1_i128 - i128::from(x))),
@@ -158,16 +185,47 @@ impl<'a> CborValue<'a> {
                 ItemKind::Null => Null,
                 ItemKind::Undefined => Undefined,
                 ItemKind::Simple(_) => Unknown,
-                ItemKind::Array(a) => Array(a.map(|i| i.tagged_item()).collect()),
+                ItemKind::Array(a) => Array(a.map(Cow::Borrowed).collect()),
                 ItemKind::Dict(d) => Dict(d.fold(BTreeMap::new(), |mut acc, (k, v)| {
-                    if let Entry::Vacant(e) = acc.entry(k) {
-                        e.insert(v.tagged_item());
+                    if let Entry::Vacant(e) = acc.entry(Cow::Borrowed(k)) {
+                        e.insert(Cow::Borrowed(v));
                     }
                     acc
                 })),
             },
             _ => Unknown,
         }
+    }
+
+    pub fn make_static(self) -> CborValue<'static> {
+        match self {
+            Array(a) => Array(a.into_iter().map(ms).collect()),
+            Dict(d) => Dict(d.into_iter().map(|(k, v)| (ms(k), ms(v))).collect()),
+            Undefined => Undefined,
+            Null => Null,
+            Bool(b) => Bool(b),
+            Number(n) => Number(n.make_static()),
+            Timestamp {
+                unix_epoch,
+                nanos,
+                tz_sec_east,
+            } => Timestamp {
+                unix_epoch,
+                nanos,
+                tz_sec_east,
+            },
+            Str(s) => Str(ms(s)),
+            Bytes(b) => Bytes(ms(b)),
+            Invalid => Invalid,
+            Unknown => Unknown,
+        }
+    }
+}
+
+fn ms<'a, T: ToOwned + ?Sized + 'a>(c: Cow<'a, T>) -> Cow<'static, T> {
+    match c {
+        Cow::Borrowed(b) => Cow::Owned(b.to_owned()),
+        Cow::Owned(o) => Cow::Owned(o),
     }
 }
 
@@ -194,9 +252,37 @@ pub enum Number<'a> {
     },
 }
 
+impl<'a> Number<'a> {
+    fn make_static(self) -> Number<'static> {
+        match self {
+            Int(i) => Int(i),
+            IEEE754(f) => IEEE754(f),
+            Decimal {
+                exponent,
+                mantissa,
+                inverted,
+            } => Decimal {
+                exponent,
+                mantissa: ms(mantissa),
+                inverted,
+            },
+            Float {
+                exponent,
+                mantissa,
+                inverted,
+            } => Float {
+                exponent,
+                mantissa: ms(mantissa),
+                inverted,
+            },
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::{CborBuilder, Encoder, Tags};
+    use super::*;
+    use crate::{CborBuilder, CborOwned, Encoder, Literal, Writer};
 
     #[test]
     fn display() {
@@ -209,45 +295,217 @@ mod tests {
         assert_eq!(to_cbor_str(-0.0), "-0.0");
     }
 
-    // #[test]
-    // fn base64string() {
-    //     fn to_cbor(s: &str, tag: u64) -> CborOwned {
-    //         let mut v = vec![0xd8u8, tag as u8, 0x60 | (s.len() as u8)];
-    //         v.extend_from_slice(s.as_bytes());
-    //         CborOwned::unchecked(v)
-    //     }
-    //     fn b(bytes: &CborOwned) -> Vec<u8> {
-    //         bytes
-    //             .value()
-    //             .expect("a")
-    //             .as_bytes()
-    //             .expect("b")
-    //             .into_owned()
-    //     }
+    #[test]
+    fn base64string() {
+        fn to_cbor(s: &str, tag: u64) -> CborOwned {
+            let mut v = vec![0xd8u8, tag as u8, 0x60 | (s.len() as u8)];
+            v.extend_from_slice(s.as_bytes());
+            CborOwned::unchecked(v)
+        }
+        fn b(bytes: &CborOwned) -> Vec<u8> {
+            if let CborValue::Bytes(bytes) = bytes.decode() {
+                bytes.into_owned()
+            } else {
+                panic!("no bytes: {}", bytes)
+            }
+        }
 
-    //     let bytes = to_cbor("a346_-0=", TAG_BASE64URL);
-    //     assert_eq!(b(&bytes), vec![107, 126, 58, 255, 237]);
+        let bytes = to_cbor("a346_-0=", TAG_BASE64URL);
+        assert_eq!(b(&bytes), vec![107, 126, 58, 255, 237]);
 
-    //     let bytes = to_cbor("a346_-0", TAG_BASE64URL);
-    //     assert_eq!(b(&bytes), vec![107, 126, 58, 255, 237]);
+        let bytes = to_cbor("a346_-0", TAG_BASE64URL);
+        assert_eq!(b(&bytes), vec![107, 126, 58, 255, 237]);
 
-    //     let bytes = to_cbor("a346/+0=", TAG_BASE64);
-    //     assert_eq!(b(&bytes), vec![107, 126, 58, 255, 237]);
+        let bytes = to_cbor("a346/+0=", TAG_BASE64);
+        assert_eq!(b(&bytes), vec![107, 126, 58, 255, 237]);
 
-    //     let bytes = to_cbor("a346/+0", TAG_BASE64);
-    //     assert_eq!(b(&bytes), vec![107, 126, 58, 255, 237]);
-    // }
+        let bytes = to_cbor("a346/+0", TAG_BASE64);
+        assert_eq!(b(&bytes), vec![107, 126, 58, 255, 237]);
+    }
 
     #[test]
     fn tags() {
-        let tags = Tags::fake(vec![1, 2, 3]);
-        assert_eq!(tags.last(), Some(3));
-        assert_eq!(tags.first(), Some(1));
-        assert_eq!(tags.single(), None);
+        let cbor = CborBuilder::new().write_null([1, 2, 3]);
+        assert_eq!(cbor.tags().last(), Some(3));
+        assert_eq!(cbor.tags().first(), Some(1));
+        assert_eq!(cbor.tags().single(), None);
 
-        let single = Tags::fake(vec![4]);
-        assert_eq!(single.last(), Some(4));
-        assert_eq!(single.first(), Some(4));
-        assert_eq!(single.single(), Some(4));
+        let cbor = CborBuilder::new().write_null([4]);
+        assert_eq!(cbor.tags().last(), Some(4));
+        assert_eq!(cbor.tags().first(), Some(4));
+        assert_eq!(cbor.tags().single(), Some(4));
+    }
+
+    #[test]
+    #[cfg(feature = "rfc3339")]
+    fn rfc3339() {
+        let cbor = CborBuilder::new().write_str("1983-03-22T12:17:05.345+02:00", [TAG_ISO8601]);
+        assert_eq!(
+            cbor.decode(),
+            CborValue::Timestamp {
+                unix_epoch: 417176225,
+                nanos: 345_000_000,
+                tz_sec_east: 7200
+            }
+        );
+
+        let cbor = CborBuilder::new().write_str("2183-03-22T12:17:05.345-03:00", [TAG_ISO8601]);
+        assert_eq!(
+            cbor.decode(),
+            CborValue::Timestamp {
+                unix_epoch: 6728627825,
+                nanos: 345_000_000,
+                tz_sec_east: -10800
+            }
+        );
+
+        let cbor = CborBuilder::new().write_str("1833-03-22T02:17:05.345-13:00", [TAG_ISO8601]);
+        assert_eq!(
+            cbor.decode(),
+            CborValue::Timestamp {
+                unix_epoch: -4316316175,
+                nanos: 345_000_000,
+                tz_sec_east: -46800
+            }
+        );
+    }
+
+    #[test]
+    fn epoch() {
+        let cbor = CborBuilder::new().write_pos(1234567, [TAG_EPOCH]);
+        assert_eq!(
+            cbor.decode(),
+            CborValue::Timestamp {
+                unix_epoch: 1234567,
+                nanos: 0,
+                tz_sec_east: 0
+            }
+        );
+
+        let cbor = CborBuilder::new().write_neg(1234566, [TAG_EPOCH]);
+        assert_eq!(
+            cbor.decode(),
+            CborValue::Timestamp {
+                unix_epoch: -1234567,
+                nanos: 0,
+                tz_sec_east: 0
+            }
+        );
+
+        let cbor = CborBuilder::new()
+            .write_lit(Literal::L8(12_345.900_000_014_5_f64.to_bits()), [TAG_EPOCH]);
+        assert_eq!(
+            cbor.decode(),
+            CborValue::Timestamp {
+                unix_epoch: 12345,
+                nanos: 900_000_014,
+                tz_sec_east: 0
+            }
+        );
+
+        let cbor = CborBuilder::new()
+            .write_lit(Literal::L8(12_345.900_000_015_5_f64.to_bits()), [TAG_EPOCH]);
+        assert_eq!(
+            cbor.decode(),
+            CborValue::Timestamp {
+                unix_epoch: 12345,
+                nanos: 900_000_015,
+                tz_sec_east: 0
+            }
+        );
+    }
+
+    #[test]
+    fn bignum() {
+        let cbor = CborBuilder::new().write_array([TAG_BIGFLOAT], |b| {
+            b.write_neg(2, []);
+            b.write_pos(13, []);
+        });
+        assert_eq!(
+            cbor.decode(),
+            Number(Float {
+                exponent: -3,
+                mantissa: [13_u8][..].into(),
+                inverted: false
+            })
+        );
+
+        let cbor = CborBuilder::new().write_array([TAG_BIGFLOAT], |b| {
+            b.write_neg(2, []);
+            b.write_neg(12, []);
+        });
+        assert_eq!(
+            cbor.decode(),
+            Number(Float {
+                exponent: -3,
+                mantissa: [12_u8][..].into(),
+                inverted: true
+            })
+        );
+
+        let cbor = CborBuilder::new().write_array([TAG_BIGFLOAT], |b| {
+            b.write_neg(2, []);
+            b.write_pos(0x010203, []);
+        });
+        assert_eq!(
+            cbor.decode(),
+            Number(Float {
+                exponent: -3,
+                mantissa: [1, 2, 3][..].into(),
+                inverted: false
+            })
+        );
+
+        let cbor = CborBuilder::new().write_array([TAG_BIGFLOAT], |b| {
+            b.write_neg(2, []);
+            b.write_bytes([1, 2, 3].as_ref(), [TAG_BIGNUM_POS]);
+        });
+        assert_eq!(
+            cbor.decode(),
+            Number(Float {
+                exponent: -3,
+                mantissa: [1, 2, 3][..].into(),
+                inverted: false
+            })
+        );
+
+        let cbor = CborBuilder::new().write_array([TAG_BIGFLOAT], |b| {
+            b.write_neg(2, []);
+            b.write_neg(0x010203, []);
+        });
+        assert_eq!(
+            cbor.decode(),
+            Number(Float {
+                exponent: -3,
+                mantissa: [1, 2, 3][..].into(),
+                inverted: true
+            })
+        );
+
+        let cbor = CborBuilder::new().write_array([TAG_BIGFLOAT], |b| {
+            b.write_neg(2, []);
+            b.write_bytes([1, 2, 3].as_ref(), [TAG_BIGNUM_NEG]);
+        });
+        assert_eq!(
+            cbor.decode(),
+            Number(Float {
+                exponent: -3,
+                mantissa: [1, 2, 3][..].into(),
+                inverted: true
+            })
+        );
+
+        let cbor = CborBuilder::new().write_array([TAG_BIGDECIMAL], |b| {
+            b.write_pos(2, []);
+            b.write_pos(0xff01020304, []);
+        });
+        assert_eq!(
+            cbor.decode(),
+            Number(Decimal {
+                exponent: 2,
+                mantissa: [255, 1, 2, 3, 4][..].into(),
+                inverted: false
+            })
+        );
     }
 }

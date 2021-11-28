@@ -284,7 +284,7 @@ mod tests {
         assert_eq!(
             x.index([PathElement::Number(2), PathElement::Number(1)])
                 .unwrap()
-                .item(),
+                .kind(),
             ItemKind::Undefined
         );
     }

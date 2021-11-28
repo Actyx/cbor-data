@@ -158,18 +158,8 @@ mod tests {
         let encoded_dict =
             CborBuilder::default().write_bytes(nested_dict.as_slice(), Some(TAG_CBOR_ITEM));
 
-        let a = |s: &str| {
-            encoded_array
-                .index(index_str(s).unwrap())
-                .unwrap()
-                .to_string()
-        };
-        let d = |s: &str| {
-            encoded_dict
-                .index(index_str(s).unwrap())
-                .unwrap()
-                .to_string()
-        };
+        let a = |s: &str| encoded_array.index(index_str(s)).unwrap().to_string();
+        let d = |s: &str| encoded_dict.index(index_str(s)).unwrap().to_string();
 
         assert_eq!(a(""), r#"[<[<null>, <"v">]>, <{"a": <null>, "b": <"v">}>]"#);
         assert_eq!(a("[0]"), r#"[<null>, <"v">]"#);

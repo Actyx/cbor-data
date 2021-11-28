@@ -147,11 +147,11 @@ mod tests {
     #[test]
     fn must_read_serde() {
         assert_eq!(
-            sample().index(index_str("a.b").unwrap()).unwrap().item(),
+            sample().index(index_str("a.b")).unwrap().kind(),
             ItemKind::Pos(12)
         );
         assert_eq!(
-            sample().index(index_str("c").unwrap()).unwrap().item(),
+            sample().index(index_str("c")).unwrap().kind(),
             ItemKind::Null
         );
     }
@@ -181,16 +181,16 @@ mod tests {
         for (res, bytes) in cases {
             let cbor = Cbor::unchecked(&*bytes);
             assert!(
-                matches!(cbor.item(), ItemKind::Str(s) if s == res),
+                matches!(cbor.kind(), ItemKind::Str(s) if s == res),
                 "value was {:?}",
-                cbor.item()
+                cbor.kind()
             );
 
             let cbor = CborOwned::canonical(bytes, false).unwrap();
             assert!(
-                matches!(cbor.item(), ItemKind::Str(s) if s.as_str().unwrap() == res),
+                matches!(cbor.kind(), ItemKind::Str(s) if s.as_str().unwrap() == res),
                 "value was {:?}",
-                cbor.item()
+                cbor.kind()
             );
         }
     }
@@ -199,8 +199,8 @@ mod tests {
     fn float() {
         let bytes = vec![0xfau8, 0, 0, 51, 17];
         let cbor = Cbor::unchecked(&*bytes);
-        assert_eq!(cbor.item(), ItemKind::Float(1.8319174824118334e-41));
+        assert_eq!(cbor.kind(), ItemKind::Float(1.8319174824118334e-41));
         let cbor = CborOwned::canonical(bytes, false).unwrap();
-        assert_eq!(cbor.item(), ItemKind::Float(1.8319174824118334e-41));
+        assert_eq!(cbor.kind(), ItemKind::Float(1.8319174824118334e-41));
     }
 }

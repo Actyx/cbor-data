@@ -1,26 +1,4 @@
-//! A library for using CBOR as in-memory representation for working with dynamically shaped data.
-//!
-//! For the details on the data format see [RFC 8949](https://www.rfc-editor.org/rfc/rfc8949). It is
-//! normally meant to be used as a data interchange format that models a superset of the JSON
-//! features while employing a more compact binary representation. As such, the data representation
-//! is biased towards smaller in-memory size and not towards fastest data access speed.
-//!
-//! This library presents a range of tradeoffs when using this data format. You can just use the
-//! bits you get from the wire or from a file, without paying any initial overhead but with the
-//! possibility of panicking during access and panicking when extracting (byte) strings encoded
-//! with indefinite size. Or you can validate and canonicalise the bits before
-//! using them, removing the possibility of panics and guaranteeing that indexing into the data
-//! will never allocate.
-//!
-//! Regarding performance you should keep in mind that arrays and dictionaries are encoded as flat
-//! juxtaposition of its elements, meaning that indexing will have to decode items as it skips over
-//! them.
-//!
-//! Regarding the interpretation of parsed data you have the option of inspecting the particular
-//! encoding (by pattern matching on [`CborValue`](struct.CborValue.html)) or extracting the information
-//! you need using the API methods. In the latter case, many binary representations may yield the
-//! same value, e.g. when asking for an integer the result may stem from a non-optimal encoding
-//! (like writing 57 as 64-bit value) or from a BigDecimal with mantissa 570 and exponent -1.
+#![doc = include_str!("../README.md")]
 
 use std::{
     borrow::{Borrow, Cow},
@@ -273,14 +251,26 @@ impl Cbor {
         &self.0
     }
 
-    // pub fn decode(&self) -> CborValue<'_> {
-    //     todo!()
-    // }
+    /// Interpret the CBOR item at a higher level
+    ///
+    /// While [`item`](#method.item) gives you precise information on how the item is encoded,
+    /// this method interprets the tag-based encoding according to the standard, adding for example
+    /// big integers, decimals, and floats, or turning base64-encoded text strings into binary strings.
+    pub fn decode(&self) -> CborValue<'_> {
+        CborValue::new(self.tagged_item())
+    }
 
-    pub fn item(&self) -> ItemKind<'_> {
+    /// An iterator over the tags present on this item, from outermost to innermost
+    pub fn tags(&self) -> Tags<'_> {
+        reader::tags(self.as_slice()).unwrap().0
+    }
+
+    /// The low-level encoding of this item, without its tags
+    pub fn kind(&self) -> ItemKind<'_> {
         ItemKind::new(self)
     }
 
+    /// The low-level encoding of this item with its tags
     pub fn tagged_item(&self) -> TaggedItem<'_> {
         TaggedItem::new(self)
     }
@@ -453,12 +443,22 @@ impl CborOwned {
 /// let cbor = Cbor::checked(b"eActyx").unwrap();
 ///
 /// // dict key `x`, array index 12, dict key `y`
-/// assert_eq!(cbor.index(index_str("x[12].y").unwrap()), None);
+/// assert_eq!(cbor.index(index_str("x[12].y")), None);
 /// // empty string means the outermost item
-/// assert!(matches!(cbor.index(index_str("").unwrap()).unwrap().item(), ItemKind::Str(s) if s == "Actyx"));
+/// assert!(matches!(cbor.index(index_str("")).unwrap().kind(), ItemKind::Str(s) if s == "Actyx"));
 /// ```
-pub fn index_str(s: &str) -> Option<IndexStr<'_>> {
+pub fn try_index_str(s: &str) -> Option<IndexStr<'_>> {
     IndexStr::new(s)
+}
+
+/// Generate an iterator of [`PathElement`](struct.PathElement.html) from a string
+///
+/// # Panics
+///
+/// Panics if the string is not valid, see [`try_index_str`](#method.try_index_str) for the
+/// details and a non-panicking version.
+pub fn index_str(s: &str) -> IndexStr<'_> {
+    try_index_str(s).expect("invalid index string")
 }
 
 struct DebugUsingDisplay<'a, T>(&'a T);

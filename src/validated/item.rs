@@ -2,7 +2,10 @@ use super::iterators::{ArrayIter, BytesIter, DictIter, StringIter};
 use crate::{constants::TAG_CBOR_ITEM, Cbor, DebugUsingDisplay, Tags};
 use std::fmt::{Debug, Display, Formatter, Write};
 
-/// Low-level decoded form of a CBOR item. Use CborValue for inspecting values.
+/// Low-level encoding of a CBOR item. Use [`CborValue`](enum.CborValue.html) for inspecting values.
+///
+/// You can obtain this representation from [`Cbor::kind`](struct.Cbor.html#method.kind) or
+/// [`TaggedItem::kind`](struct.TaggedItem.html#method.kind).
 ///
 /// Beware of the `Neg` variant, which carries `-1 - x`.
 #[derive(PartialEq, PartialOrd, Clone, Copy)]
@@ -51,6 +54,8 @@ impl<'a> ItemKind<'a> {
 }
 
 /// Representation of a possibly tagged CBOR data item
+///
+/// You can obtain this representation using [`Cbor::tagged_item`](struct.Cbor.html#method.tagged_item).
 ///
 /// It holds an iterable representation of the tags, a decoded [`ItemKind`](enum.ItemKind.html)
 /// and a reference to the underlying bytes for the whole item. Since all these are shallow

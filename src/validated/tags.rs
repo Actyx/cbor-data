@@ -42,24 +42,9 @@ impl<'a> Tags<'a> {
         Self { bytes }
     }
 
-    /// Create fake tags for testing. Caution: this leaks memory.
-    /// Tags are from outer to inner.
-    #[cfg(test)]
-    pub fn fake(tags: impl IntoIterator<Item = u64>) -> Self {
-        let mut data = Vec::new();
-        crate::builder::write_tags(&mut data, tags);
-        Self { bytes: data.leak() }
-    }
-
     /// outermost / first tag
-    pub fn first(&self) -> Option<u64> {
-        let mut iter = *self;
-        iter.next()
-    }
-
-    /// innermost / last tag
-    pub fn last(&self) -> Option<u64> {
-        (*self).last()
+    pub fn first(mut self) -> Option<u64> {
+        self.next()
     }
 
     /// single tag. If there is more than one tag, this will return None

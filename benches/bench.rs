@@ -42,14 +42,14 @@ fn create_cbor() -> CborOwned {
 fn make_new_object(obj: &Cbor) -> CborOwned {
     CborBuilder::default().write_dict(None, |b| {
         let mut started = 0;
-        if let ItemKind::Pos(x) = obj.index(index_str("started").unwrap()).unwrap().item() {
+        if let ItemKind::Pos(x) = obj.index(index_str("started")).unwrap().kind() {
             started = x;
             b.with_key("start", |b| b.write_pos(x, None));
         }
-        if let ItemKind::Str(s) = obj.index(index_str("byWhom").unwrap()).unwrap().item() {
+        if let ItemKind::Str(s) = obj.index(index_str("byWhom")).unwrap().kind() {
             b.with_key("who", |b| b.write_str(s.as_cow().as_ref(), None));
         }
-        if let ItemKind::Pos(stopped) = obj.index(index_str("stopped").unwrap()).unwrap().item() {
+        if let ItemKind::Pos(stopped) = obj.index(index_str("stopped")).unwrap().kind() {
             b.with_key("duration", |b| b.write_pos(stopped - started, None));
         }
     })
