@@ -11,7 +11,7 @@ use std::fmt::{Display, Formatter, Write};
 /// use cbor_data::CborOwned;
 ///
 /// // FALSE tagged with 1, 11, 11*256+22
-/// let cbor = CborOwned::canonical([0xc1, 0xd8, 11, 0xd9, 11, 22, 0xf4], false).unwrap();
+/// let cbor = CborOwned::canonical([0xc1, 0xd8, 11, 0xd9, 11, 22, 0xf4]).unwrap();
 /// let item = cbor.tagged_item();
 /// assert_eq!(item.tags().collect::<Vec<_>>(), vec![1, 11, 11 * 256 + 22]);
 /// ```

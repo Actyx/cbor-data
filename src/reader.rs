@@ -139,7 +139,6 @@ mod tests {
                 "c": null
             }))
             .unwrap(),
-            false,
         )
         .unwrap()
     }
@@ -186,7 +185,7 @@ mod tests {
                 cbor.kind()
             );
 
-            let cbor = CborOwned::canonical(bytes, false).unwrap();
+            let cbor = CborOwned::canonical(bytes).unwrap();
             assert!(
                 matches!(cbor.kind(), ItemKind::Str(s) if s.as_str().unwrap() == res),
                 "value was {:?}",
@@ -200,7 +199,7 @@ mod tests {
         let bytes = vec![0xfau8, 0, 0, 51, 17];
         let cbor = Cbor::unchecked(&*bytes);
         assert_eq!(cbor.kind(), ItemKind::Float(1.8319174824118334e-41));
-        let cbor = CborOwned::canonical(bytes, false).unwrap();
+        let cbor = CborOwned::canonical(bytes).unwrap();
         assert_eq!(cbor.kind(), ItemKind::Float(1.8319174824118334e-41));
     }
 }

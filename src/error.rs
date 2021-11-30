@@ -1,67 +1,113 @@
-use std::{fmt::Display, str::Utf8Error};
+use std::{
+    fmt::{Debug, Display},
+    str::Utf8Error,
+};
+
+/// What the parser was looking for when bytes ran out
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WhileParsing {
+    ItemHeader,
+    HeaderValue,
+    ArrayItem,
+    DictItem,
+    BytesFragment,
+    BytesValue,
+    StringFragment,
+    StringValue,
+}
 
 /// Errors that may be encountered when parsing CBOR bytes
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ErrorKind {
     /// lower five bits of item header were > 27
     InvalidInfo,
-    /// extra bytes were left while extracting the top-level item
+    /// extra bytes were left while extracting the top-level item or decoding a TAG_CBOR_ITEM byte string
     TrailingGarbage,
     /// indefinite size encoding of (byte or text) strings requires definite size chunks to have the same major type
     InvalidStringFragment,
     /// a text string (or fragment thereof) contained invalid UTF-8 data
     InvalidUtf8(Utf8Error),
+    /// the provided bytes are incomplete
+    ///
+    /// This error can be flagged also at the end of a TAG_CBOR_ITEM byte string, i.e.
+    /// in the middle of the validated bytes.
+    UnexpectedEof(WhileParsing),
+}
+
+impl Display for ErrorKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ErrorKind::InvalidInfo => write!(f, "invalid item header"),
+            ErrorKind::TrailingGarbage => write!(f, "trailing garbage"),
+            ErrorKind::InvalidStringFragment => write!(f, "string fragment of wrong major type"),
+            ErrorKind::InvalidUtf8(e) => write!(f, "UTF-8 error `{}`", e),
+            ErrorKind::UnexpectedEof(w) => write!(f, "ran out of bytes while parsing {:?}", w),
+        }
+    }
 }
 
 /// Error container for parsing problems
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Error<'a> {
-    /// The provided bytes are incomplete
-    ///
-    /// The contained string describes what was currently being parsed when bytes ran out.
-    UnexpectedEof(&'static str),
-    /// Internal — you’ll never see this
-    AtSlice(&'a [u8], ErrorKind),
-    /// The given error was found at the given offset in the input.
-    AtOffset(usize, ErrorKind),
+#[derive(Clone, PartialEq, Eq)]
+pub struct ParseError {
+    offset: usize,
+    kind: ErrorKind,
 }
 
-impl<'a> Error<'a> {
-    pub(crate) fn offset(&self, base: &[u8]) -> Option<usize> {
-        let s = match self {
-            Error::UnexpectedEof(_) => return None,
-            Error::AtSlice(s, _) => *s,
-            Error::AtOffset(_, _) => return None,
-        };
-        Some(unsafe { (&s[0] as *const u8).offset_from(&base[0] as *const u8) } as usize)
+impl ParseError {
+    /// Get a reference to the parse error's offset.
+    pub fn offset(&self) -> usize {
+        self.offset
     }
 
-    pub(crate) fn with_location(self, loc: &[u8]) -> Error<'_> {
-        use Error::*;
-        match self {
-            UnexpectedEof(s) => UnexpectedEof(s),
-            AtSlice(_, e) => AtSlice(loc, e),
-            AtOffset(o, e) => AtOffset(o, e),
-        }
-    }
-
-    pub(crate) fn rebase(self, base: &[u8]) -> Error<'static> {
-        use Error::*;
-        match self {
-            UnexpectedEof(s) => UnexpectedEof(s),
-            AtSlice(s, e) => AtOffset(
-                unsafe { (&s[0] as *const u8).offset_from(&base[0] as *const u8) } as usize,
-                e,
-            ),
-            AtOffset(o, e) => AtOffset(o, e),
-        }
+    /// Get a reference to the parse error's kind.
+    pub fn kind(&self) -> ErrorKind {
+        self.kind.clone()
     }
 }
 
-impl<'a> Display for Error<'a> {
+impl Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Debug::fmt(self, f)
+        write!(f, "{} at offset {}", self.kind, self.offset)
     }
 }
 
-impl<'a> std::error::Error for Error<'a> {}
+impl std::error::Error for ParseError {}
+
+impl Debug for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(self, f)
+    }
+}
+
+pub(crate) struct InternalError<'a> {
+    position: &'a [u8],
+    kind: ErrorKind,
+}
+
+impl<'a> InternalError<'a> {
+    pub fn new(position: &'a [u8], kind: ErrorKind) -> Self {
+        Self { position, kind }
+    }
+
+    pub fn offset(&self, base: &[u8]) -> usize {
+        let position = self.position as *const _ as *const u8;
+        let base = base as *const _ as *const u8;
+        // safety: self.position is a subslice of base
+        unsafe { position.offset_from(base) as usize }
+    }
+
+    pub fn with_location(self, loc: &[u8]) -> InternalError<'_> {
+        InternalError {
+            position: loc,
+            kind: self.kind,
+        }
+    }
+
+    pub fn rebase(self, base: &[u8]) -> ParseError {
+        ParseError {
+            offset: self.offset(base),
+            kind: self.kind,
+        }
+    }
+}

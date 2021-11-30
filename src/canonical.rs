@@ -1,45 +1,55 @@
 use crate::{
     check::{value_bytes, MkErr},
     constants::*,
-    error::ErrorKind,
+    error::{ErrorKind, InternalError},
     reader::{careful_literal, indefinite, integer, major, tags},
     validated::iterators::BytesIter,
-    ArrayWriter, DictWriter, Error, Writer,
+    ArrayWriter, DictWriter,
+    ErrorKind::*,
+    ParseError,
+    WhileParsing::*,
+    Writer,
 };
 
 /// Canonicalise the input bytes into the output Writer
-pub fn canonicalise<W: Writer>(bytes: &[u8], builder: W) -> Result<(&[u8], W::Output), Error> {
-    let (tags, bytes) = tags(bytes).ok_or(Error::AtSlice(bytes, ErrorKind::InvalidInfo))?;
-    match major(bytes).ok_or(Error::UnexpectedEof("item header"))? {
+pub fn canonicalise<W: Writer>(bytes: &[u8], builder: W) -> Result<W::Output, ParseError> {
+    let (rest, cbor) = canonical(bytes, builder).map_err(|e| e.rebase(bytes))?;
+    if rest.is_empty() {
+        Ok(cbor)
+    } else {
+        Err(InternalError::new(rest, TrailingGarbage).rebase(bytes))
+    }
+}
+
+fn canonical<W: Writer>(bytes: &[u8], builder: W) -> Result<(&[u8], W::Output), InternalError> {
+    let (tags, bytes) = tags(bytes).ok_or_else(|| InternalError::new(bytes, InvalidInfo))?;
+    match major(bytes).ok_or_else(|| InternalError::new(bytes, UnexpectedEof(ItemHeader)))? {
         MAJOR_POS => integer(bytes)
             .map(|(x, _, r)| (r, builder.write_pos(x, tags)))
-            .ok_or(Error::AtSlice(bytes, ErrorKind::InvalidInfo)),
+            .header_value(bytes),
         MAJOR_NEG => integer(bytes)
             .map(|(x, _, r)| (r, builder.write_neg(x, tags)))
-            .ok_or(Error::AtSlice(bytes, ErrorKind::InvalidInfo)),
+            .header_value(bytes),
         MAJOR_BYTES => {
             if tags.single() == Some(TAG_CBOR_ITEM) {
                 // drop top-level CBOR item encoding wrapper
                 value_bytes(bytes, true, false).and_then(|(b, rest)| {
                     canonicalise(b.as_ref(), builder)
-                        .map(|(_, out)| (rest, out))
+                        .map(|out| (rest, out))
                         .map_err(|e| {
-                            if let Some(mut offset) = e.offset(b.as_ref()) {
-                                let iter = if bytes[0] & 31 == INDEFINITE_SIZE {
-                                    BytesIter::new(&bytes[1..], None)
-                                } else {
-                                    BytesIter::new(bytes, Some(1))
-                                };
-                                for slice in iter {
-                                    if offset < slice.len() {
-                                        return e.with_location(&slice[offset..]);
-                                    }
-                                    offset -= slice.len();
-                                }
-                                e.with_location(rest)
+                            let mut offset = e.offset();
+                            let iter = if bytes[0] & 31 == INDEFINITE_SIZE {
+                                BytesIter::new(&bytes[1..], None)
                             } else {
-                                e.with_location(bytes)
+                                BytesIter::new(bytes, Some(1))
+                            };
+                            for slice in iter {
+                                if offset < slice.len() {
+                                    return InternalError::new(&slice[offset..], e.kind());
+                                }
+                                offset -= slice.len();
                             }
+                            InternalError::new(rest, e.kind())
                         })
                 })
             } else {
@@ -61,7 +71,7 @@ pub fn canonicalise<W: Writer>(bytes: &[u8], builder: W) -> Result<(&[u8], W::Ou
         }
         MAJOR_LIT => careful_literal(bytes)
             .map(|(lit, rest)| (rest, builder.write_lit(lit, tags)))
-            .ok_or(Error::AtSlice(bytes, ErrorKind::InvalidInfo)),
+            .ok_or_else(|| InternalError::new(bytes, ErrorKind::InvalidInfo)),
         _ => unreachable!(),
     }
 }
@@ -69,30 +79,40 @@ pub fn canonicalise<W: Writer>(bytes: &[u8], builder: W) -> Result<(&[u8], W::Ou
 fn canonicalise_array<'a>(
     bytes: &'a [u8],
     mut builder: &mut ArrayWriter,
-) -> Result<&'a [u8], Error<'a>> {
+) -> Result<&'a [u8], InternalError<'a>> {
     // at this point the first byte (indefinite array) has already been written
     let (len, _, mut bytes) = integer(bytes)
         .or_else(|| indefinite(bytes))
         .header_value(bytes)?;
     if len == u64::MAX {
         // marker for indefinite size
-        while *bytes.get(0).ok_or(Error::UnexpectedEof("array item"))? != STOP_BYTE {
-            bytes = canonicalise(bytes, &mut builder)?.0;
+        while *bytes
+            .get(0)
+            .ok_or_else(|| InternalError::new(bytes, UnexpectedEof(ArrayItem)))?
+            != STOP_BYTE
+        {
+            bytes = canonical(bytes, &mut builder)?.0;
         }
         Ok(&bytes[1..])
     } else {
         for _ in 0..len {
-            bytes = canonicalise(bytes, &mut builder)?.0;
+            if bytes.is_empty() {
+                return Err(InternalError::new(bytes, UnexpectedEof(ArrayItem)));
+            }
+            bytes = canonical(bytes, &mut builder)?.0;
         }
         Ok(bytes)
     }
 }
 
-fn canonicalise_dict<'a>(bytes: &'a [u8], builder: &mut DictWriter) -> Result<&'a [u8], Error<'a>> {
-    fn pair<'a>(bytes: &mut &'a [u8], w: &mut DictWriter) -> Result<(), Error<'a>> {
+fn canonicalise_dict<'a>(
+    bytes: &'a [u8],
+    builder: &mut DictWriter,
+) -> Result<&'a [u8], InternalError<'a>> {
+    fn pair<'a>(bytes: &mut &'a [u8], w: &mut DictWriter) -> Result<(), InternalError<'a>> {
         w.try_write_pair(|key| {
-            let (rest, val) = canonicalise(bytes, key)?;
-            let (rest, res) = canonicalise(rest, val)?;
+            let (rest, val) = canonical(bytes, key)?;
+            let (rest, res) = canonical(rest, val)?;
             *bytes = rest;
             Ok(res)
         })?;
@@ -105,12 +125,19 @@ fn canonicalise_dict<'a>(bytes: &'a [u8], builder: &mut DictWriter) -> Result<&'
         .header_value(bytes)?;
     if len == u64::MAX {
         // marker for indefinite size
-        while *bytes.get(0).ok_or(Error::UnexpectedEof("array item"))? != STOP_BYTE {
+        while *bytes
+            .get(0)
+            .ok_or_else(|| InternalError::new(bytes, UnexpectedEof(DictItem)))?
+            != STOP_BYTE
+        {
             pair(&mut bytes, builder)?;
         }
         Ok(&bytes[1..])
     } else {
         for _ in 0..len {
+            if bytes.is_empty() {
+                return Err(InternalError::new(bytes, UnexpectedEof(DictItem)));
+            }
             pair(&mut bytes, builder)?;
         }
         Ok(bytes)
@@ -185,7 +212,7 @@ mod tests {
             r#"<[<[<null>, <"v">]>, <{"a": <null>, "b": <"v">}>]>"#
         );
 
-        let canonical_array = CborOwned::canonical(encoded_array.as_slice(), false).unwrap();
+        let canonical_array = CborOwned::canonical(encoded_array.as_slice()).unwrap();
         assert_eq!(
             format!("{:?}", canonical_array),
             "Cbor(8282f661 76a26161 f6616261 76)".to_owned()
@@ -213,7 +240,7 @@ mod tests {
             r#"<{"a": <[<null>, <"v">]>, "b": <{"a": <null>, "b": <"v">}>}>"#
         );
 
-        let canonical_dict = CborOwned::canonical(encoded_dict.as_slice(), false).unwrap();
+        let canonical_dict = CborOwned::canonical(encoded_dict.as_slice()).unwrap();
         assert_eq!(
             format!("{:?}", canonical_dict),
             "Cbor(a2616182 f6617661 62a26161 f6616261 76)".to_owned()

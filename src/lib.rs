@@ -24,7 +24,7 @@ pub use builder::{
     ArrayWriter, CborBuilder, CborOutput, DictWriter, Encoder, KeyBuilder, NoOutput, SingleBuilder,
     SingleResult, WithOutput, Writer,
 };
-pub use error::{Error, ErrorKind};
+pub use error::{ErrorKind, ParseError, WhileParsing};
 pub use reader::Literal;
 pub use validated::{
     indexing::{IndexStr, PathElement},
@@ -180,10 +180,10 @@ impl AsRef<[u8]> for Cbor {
 }
 
 impl<'a> TryFrom<&'a [u8]> for &'a Cbor {
-    type Error = error::Error<'static>;
+    type Error = error::ParseError;
 
     fn try_from(value: &'a [u8]) -> Result<Self, Self::Error> {
-        Cbor::checked(value).map_err(|e| e.rebase(value))
+        Cbor::checked(value)
     }
 }
 
@@ -226,23 +226,18 @@ impl Cbor {
     }
 
     /// Cast the given byte slice as CBOR item if the encoding is valid
-    pub fn checked(bytes: &[u8]) -> Result<&Self, Error<'static>> {
-        let (cbor, rest) = check::validate(bytes, None).map_err(|e| e.rebase(bytes))?;
-        if rest.is_empty() {
-            Ok(cbor)
-        } else {
-            Err(Error::AtSlice(rest, ErrorKind::TrailingGarbage).rebase(bytes))
-        }
+    pub fn checked(bytes: &[u8]) -> Result<&Self, ParseError> {
+        check::validate(bytes)
     }
 
     /// Convert the given bytes to a CBOR item if the encoding is valid
     ///
     /// The borrowed variant is converted using [`checked`](#method.checked) without
     /// allocating. The owned variant is converted using [`CborOwned::canonical`](struct.CborOwned.html#method.canonical).
-    pub fn from_cow_checked(bytes: Cow<'_, [u8]>) -> Result<Cow<'_, Cbor>, Error<'static>> {
+    pub fn from_cow_checked(bytes: Cow<'_, [u8]>) -> Result<Cow<'_, Cbor>, ParseError> {
         match bytes {
-            Cow::Borrowed(b) => Cbor::checked(b).map(Cow::Borrowed).map_err(|e| e.rebase(b)),
-            Cow::Owned(v) => CborOwned::canonical(v, false).map(Cow::Owned),
+            Cow::Borrowed(b) => Cbor::checked(b).map(Cow::Borrowed),
+            Cow::Owned(v) => CborOwned::canonical(v).map(Cow::Owned),
         }
     }
 
@@ -382,10 +377,10 @@ impl Deref for CborOwned {
 }
 
 impl TryFrom<&[u8]> for CborOwned {
-    type Error = error::Error<'static>;
+    type Error = error::ParseError;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        Self::canonical(value, false)
+        Self::canonical(value)
     }
 }
 
@@ -410,17 +405,8 @@ impl CborOwned {
     ///
     /// For more configuration options like reusing a scratch space or preferring definite size encoding
     /// see [`CborBuilder`](struct.CborBuilder.html).
-    pub fn canonical(
-        bytes: impl AsRef<[u8]>,
-        permit_trailing_bytes: bool,
-    ) -> Result<Self, Error<'static>> {
-        let bytes = bytes.as_ref();
-        let (rest, ret) = canonicalise(bytes, CborBuilder::new()).map_err(|e| e.rebase(bytes))?;
-        if !permit_trailing_bytes && !rest.is_empty() {
-            Err(Error::AtSlice(rest, ErrorKind::TrailingGarbage).rebase(bytes))
-        } else {
-            Ok(ret)
-        }
+    pub fn canonical(bytes: impl AsRef<[u8]>) -> Result<Self, ParseError> {
+        canonicalise(bytes.as_ref(), CborBuilder::new())
     }
 }
 

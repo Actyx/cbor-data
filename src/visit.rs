@@ -61,7 +61,7 @@ use crate::{ItemKind, TaggedItem};
 ///     0xc4u8, 0x84, 5, 0xa2, 0x61, b'a', 0x39, 2, 154, 0x61, b'b', 0x46, b'd', b'e', b'f', b'd',
 ///     b'e', b'f', 0x82, 0xf4, 0x65, b'h', b'e', b'l', b'l', b'o', 0xd9, 48, 57, 0xf6,
 /// ];
-/// let cbor = CborOwned::canonical(bytes, false).expect("invalid CBOR");
+/// let cbor = CborOwned::canonical(bytes).expect("invalid CBOR");
 ///
 /// let pretty = pretty_print(cbor.as_ref()).expect("should always be able to write to a String …");
 ///

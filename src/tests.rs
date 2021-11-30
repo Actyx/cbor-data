@@ -110,7 +110,7 @@ fn canonical() {
         0xc4u8, 0x84, 5, 0xa2, 0x61, b'a', 0x39, 2, 154, 0x61, b'b', 0x46, b'd', b'e', b'f', b'd',
         b'e', b'f', 0x82, 0xf4, 0x65, b'h', b'e', b'l', b'l', b'o', 0xd9, 48, 57, 0xf6,
     ];
-    let complex = CborOwned::canonical(bytes, false).unwrap();
+    let complex = CborOwned::canonical(bytes).unwrap();
 
     assert_eq!(
         complex.to_string(),
@@ -145,7 +145,7 @@ fn str_to_cbor(s: &str, trusting: bool) -> CborOwned {
     if trusting {
         Cbor::checked(&*v).unwrap().to_owned()
     } else {
-        CborOwned::canonical(v, false).unwrap()
+        CborOwned::canonical(v).unwrap()
     }
 }
 
