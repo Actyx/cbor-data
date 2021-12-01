@@ -399,8 +399,7 @@ impl CborOwned {
     /// This constructor will go through and decode the whole provided CBOR bytes and write them into a
     /// vector, thereby
     ///
-    ///  - retaining only innermost tags
-    ///  - writing arrays and dicts using indefinite size format
+    ///  - writing large arrays and dicts using indefinite size format
     ///  - writing numbers in their smallest form
     ///
     /// For more configuration options like reusing a scratch space or preferring definite size encoding

@@ -10,7 +10,7 @@ mod number;
 mod timestamp;
 
 pub use number::{Exponential, Number};
-pub use timestamp::Timestamp;
+pub use timestamp::{Precision, Timestamp};
 
 /// Lifted navigation structure for a CborValue.
 ///
