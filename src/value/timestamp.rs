@@ -1,8 +1,4 @@
-use crate::{
-    constants::{TAG_EPOCH, TAG_ISO8601},
-    Encoder, ItemKind, Literal, TaggedItem,
-};
-use std::convert::TryFrom;
+use crate::{constants::TAG_EPOCH, Encoder, ItemKind, Literal, TaggedItem};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Precision {
@@ -91,7 +87,9 @@ impl Timestamp {
         } else {
             #[cfg(feature = "rfc3339")]
             {
+                use crate::constants::TAG_ISO8601;
                 use chrono::{DateTime, FixedOffset};
+                use std::convert::TryFrom;
 
                 let mut this = self;
                 let as_epoch = match precision {
