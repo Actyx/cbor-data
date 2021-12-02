@@ -227,7 +227,12 @@ impl Cbor {
 
     /// Cast the given byte slice as CBOR item if the encoding is valid
     pub fn checked(bytes: &[u8]) -> Result<&Self, ParseError> {
-        check::validate(bytes)
+        check::validate(bytes, false).map(|(cbor, _rest)| cbor)
+    }
+
+    /// Cast the given byte slice as CBOR item if the encoding is valid, permitting more bytes to follow the item
+    pub fn checked_prefix(bytes: &[u8]) -> Result<(&Self, &[u8]), ParseError> {
+        check::validate(bytes, true)
     }
 
     /// Convert the given bytes to a CBOR item if the encoding is valid

@@ -82,7 +82,7 @@ pub(crate) fn value_bytes(
     }
 }
 
-pub fn validate(bytes: &[u8]) -> Result<&Cbor, ParseError> {
+pub fn validate(bytes: &[u8], permit_suffix: bool) -> Result<(&Cbor, &[u8]), ParseError> {
     fn rec(bytes: &[u8], tag: Option<u64>) -> Result<(&Cbor, &[u8]), InternalError> {
         let m = major(bytes).ok_or_else(|| InternalError::new(bytes, UnexpectedEof(ItemHeader)))?;
         match m {
@@ -169,8 +169,8 @@ pub fn validate(bytes: &[u8]) -> Result<&Cbor, ParseError> {
         }
     }
     let (cbor, rest) = rec(bytes, None).map_err(|e| e.rebase(bytes))?;
-    if rest.is_empty() {
-        Ok(cbor)
+    if rest.is_empty() || permit_suffix {
+        Ok((cbor, rest))
     } else {
         Err(InternalError::new(rest, TrailingGarbage).rebase(bytes))
     }
@@ -187,7 +187,7 @@ mod tests {
 
     fn t(bytes: impl AsRef<[u8]>) -> (usize, ErrorKind) {
         let bytes = bytes.as_ref();
-        let error = validate(bytes).unwrap_err();
+        let error = validate(bytes, false).unwrap_err();
         let error2 = CborOwned::canonical(bytes).unwrap_err();
         assert_eq!(error2, error, "canonical != checked");
         (error.offset(), error.kind())
@@ -317,5 +317,22 @@ mod tests {
         assert_eq!(t([0x9f]), (1, UnexpectedEof(ArrayItem)));
         assert_eq!(t([0xa1]), (1, UnexpectedEof(DictItem)));
         assert_eq!(t([0xbf]), (1, UnexpectedEof(DictItem)));
+    }
+
+    #[test]
+    fn suffix() {
+        fn t(bytes: impl AsRef<[u8]>) -> Result<usize, (usize, ErrorKind)> {
+            let bytes = bytes.as_ref();
+            validate(bytes, true)
+                .map(|(_cbor, rest)| rest.len())
+                .map_err(|error| {
+                    let error2 = CborOwned::canonical(bytes).unwrap_err();
+                    assert_eq!(error2, error, "canonical != checked");
+                    (error.offset(), error.kind())
+                })
+        }
+
+        assert_eq!(t([0xd8, 24, 0x41, 0x01, 2]), Ok(1));
+        assert_eq!(t([0xd8, 24, 0x42, 0x01, 2]), Err((4, TrailingGarbage)));
     }
 }

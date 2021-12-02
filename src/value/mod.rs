@@ -297,17 +297,17 @@ mod tests {
         );
 
         let cbor = CborBuilder::new()
-            .write_lit(Literal::L8(12_345.900_000_014_5_f64.to_bits()), [TAG_EPOCH]);
+            .write_lit(Literal::L8(2_345.900_000_014_5_f64.to_bits()), [TAG_EPOCH]);
         assert_eq!(
             cbor.decode(),
-            CborValue::Timestamp(Timestamp::new(12345, 900_000_014, 0))
+            CborValue::Timestamp(Timestamp::new(2345, 900_000_015, 0))
         );
 
         let cbor = CborBuilder::new()
-            .write_lit(Literal::L8(12_345.900_000_015_5_f64.to_bits()), [TAG_EPOCH]);
+            .write_lit(Literal::L8(2_345.900_000_015_5_f64.to_bits()), [TAG_EPOCH]);
         assert_eq!(
             cbor.decode(),
-            CborValue::Timestamp(Timestamp::new(12345, 900_000_015, 0))
+            CborValue::Timestamp(Timestamp::new(2345, 900_000_016, 0))
         );
     }
 
