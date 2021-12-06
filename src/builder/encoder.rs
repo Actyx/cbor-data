@@ -144,6 +144,21 @@ pub trait Encoder: Writer {
         self.write_str(value.as_ref(), None)
     }
 
+    /// Encode a byte string.
+    ///
+    /// ```
+    /// use cbor_data::{CborBuilder, Encoder};
+    ///
+    /// let cbor = CborBuilder::default().encode_array(|builder| {
+    ///     builder.encode_bytes(b"hello");
+    /// });
+    ///
+    /// # assert_eq!(cbor.as_slice(), vec![0x81, 0x45, b'h', b'e', b'l', b'l', b'o']);
+    /// ```
+    fn encode_bytes(self, value: impl AsRef<[u8]>) -> Self::Output {
+        self.write_bytes(value.as_ref(), None)
+    }
+
     /// Write an array that is then filled by the provided closure using the passed builder.
     ///
     /// see [`trait Encoder`](trait.Encoder.html) for usage examples
