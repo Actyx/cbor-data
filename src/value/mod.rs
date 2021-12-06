@@ -175,6 +175,38 @@ impl<'a> CborValue<'a> {
         }
     }
 
+    pub fn as_array(&self) -> Option<&[Cow<'a, Cbor>]> {
+        if let Array(a) = self {
+            Some(a.as_slice())
+        } else {
+            None
+        }
+    }
+
+    pub fn to_array(self) -> Option<Vec<Cow<'a, Cbor>>> {
+        if let Array(a) = self {
+            Some(a)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_dict(&self) -> Option<&BTreeMap<Cow<'a, Cbor>, Cow<'a, Cbor>>> {
+        if let Dict(a) = self {
+            Some(a)
+        } else {
+            None
+        }
+    }
+
+    pub fn to_dict(self) -> Option<BTreeMap<Cow<'a, Cbor>, Cow<'a, Cbor>>> {
+        if let Dict(a) = self {
+            Some(a)
+        } else {
+            None
+        }
+    }
+
     /// Cut all ties to the underlying byte slice, which often implies allocations
     pub fn make_static(self) -> CborValue<'static> {
         match self {
