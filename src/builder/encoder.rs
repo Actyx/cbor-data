@@ -162,9 +162,9 @@ pub trait Encoder: Writer {
     /// Write an array that is then filled by the provided closure using the passed builder.
     ///
     /// see [`trait Encoder`](trait.Encoder.html) for usage examples
-    fn encode_array<F>(self, mut f: F) -> Self::Output
+    fn encode_array<F>(self, f: F) -> Self::Output
     where
-        F: FnMut(&mut ArrayWriter<'_>),
+        F: FnOnce(&mut ArrayWriter<'_>),
     {
         self.write_array(None, |builder| f(builder))
     }
@@ -172,9 +172,9 @@ pub trait Encoder: Writer {
     /// Write a dict that is then filled by the provided closure using the passed builder.
     ///
     /// see [`trait Encoder`](trait.Encoder.html) for usage examples
-    fn encode_dict<F>(self, mut f: F) -> Self::Output
+    fn encode_dict<F>(self, f: F) -> Self::Output
     where
-        F: FnMut(&mut DictWriter<'_>),
+        F: FnOnce(&mut DictWriter<'_>),
     {
         self.write_dict(None, |builder| f(builder))
     }
