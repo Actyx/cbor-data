@@ -42,14 +42,52 @@ pub trait Writer: Sized {
     /// Write the given slice as a definite size byte string.
     /// Tags are from outer to inner.
     fn write_bytes(mut self, value: &[u8], tags: impl IntoIterator<Item = u64>) -> Self::Output {
-        self.bytes(|b| write_bytes(b, value, tags));
+        self.bytes(|b| write_bytes(b, value.len(), [value], tags));
+        self.into_output()
+    }
+
+    /// Write the given slices as a definite size byte string.
+    /// Tags are from outer to inner.
+    ///
+    /// Example:
+    /// ```rust
+    /// # use cbor_data::{CborBuilder, Writer};
+    /// let cbor = CborBuilder::default().write_bytes_chunked([&[0][..], &[1, 2][..]], [12]);
+    /// # assert_eq!(cbor.as_slice(), vec![0xccu8, 0x43, 0, 1, 2]);
+    /// ```
+    fn write_bytes_chunked(
+        mut self,
+        value: impl IntoIterator<Item = impl AsRef<[u8]>> + Copy,
+        tags: impl IntoIterator<Item = u64>,
+    ) -> Self::Output {
+        let len = value.into_iter().map(|x| x.as_ref().len()).sum();
+        self.bytes(|b| write_bytes(b, len, value, tags));
         self.into_output()
     }
 
     /// Write the given slice as a definite size string.
     /// Tags are from outer to inner.
     fn write_str(mut self, value: &str, tags: impl IntoIterator<Item = u64>) -> Self::Output {
-        self.bytes(|b| write_str(b, value, tags));
+        self.bytes(|b| write_str(b, value.len(), [value], tags));
+        self.into_output()
+    }
+
+    /// Write the given slice as a definite size string.
+    /// Tags are from outer to inner.
+    ///
+    /// Example:
+    /// ```rust
+    /// # use cbor_data::{CborBuilder, Writer};
+    /// let cbor = CborBuilder::default().write_str_chunked(["a", "b"], [12]);
+    /// # assert_eq!(cbor.as_slice(), vec![0xccu8, 0x62, 0x61, 0x62]);
+    /// ```
+    fn write_str_chunked(
+        mut self,
+        value: impl IntoIterator<Item = impl AsRef<str>> + Copy,
+        tags: impl IntoIterator<Item = u64>,
+    ) -> Self::Output {
+        let len = value.into_iter().map(|x| x.as_ref().len()).sum();
+        self.bytes(|b| write_str(b, len, value, tags));
         self.into_output()
     }
 

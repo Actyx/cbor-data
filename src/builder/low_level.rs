@@ -38,17 +38,31 @@ pub fn write_neg(bytes: &mut Vec<u8>, value: u64, tags: impl IntoIterator<Item =
 }
 
 /// Tags are from outer to inner.
-pub fn write_str(bytes: &mut Vec<u8>, value: &str, tags: impl IntoIterator<Item = u64>) {
+pub fn write_str(
+    bytes: &mut Vec<u8>,
+    len: usize,
+    value: impl IntoIterator<Item = impl AsRef<str>>,
+    tags: impl IntoIterator<Item = u64>,
+) {
     write_tags(bytes, tags);
-    write_info(bytes, MAJOR_STR, value.len() as u64);
-    bytes.extend_from_slice(value.as_bytes());
+    write_info(bytes, MAJOR_STR, len as u64);
+    for s in value {
+        bytes.extend_from_slice(s.as_ref().as_bytes());
+    }
 }
 
 /// Tags are from outer to inner.
-pub fn write_bytes(bytes: &mut Vec<u8>, value: &[u8], tags: impl IntoIterator<Item = u64>) {
+pub fn write_bytes(
+    bytes: &mut Vec<u8>,
+    len: usize,
+    value: impl IntoIterator<Item = impl AsRef<[u8]>>,
+    tags: impl IntoIterator<Item = u64>,
+) {
     write_tags(bytes, tags);
-    write_info(bytes, MAJOR_BYTES, value.len() as u64);
-    bytes.extend_from_slice(value);
+    write_info(bytes, MAJOR_BYTES, len as u64);
+    for v in value {
+        bytes.extend_from_slice(v.as_ref());
+    }
 }
 
 /// Tags are from outer to inner.

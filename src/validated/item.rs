@@ -112,7 +112,7 @@ fn write_float(f: &mut std::fmt::Formatter<'_>, x: f64) -> std::fmt::Result {
         }
         let s = w.as_str();
 
-        let e = s.find('e').unwrap_or_else(|| s.len());
+        let e = s.find('e').unwrap_or(s.len());
         let (mantissa, exponent) = s.split_at(e);
         write!(f, "{}", mantissa)?;
         if !mantissa.contains('.') {
