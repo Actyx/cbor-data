@@ -61,6 +61,11 @@ impl<'a> StringIter<'a> {
             Cow::Owned(self.collect())
         }
     }
+
+    /// compute the total length of all contained slices
+    pub fn len(&self) -> usize {
+        self.map(|v| v.len()).sum()
+    }
 }
 
 impl<'a> Debug for StringIter<'a> {
@@ -173,6 +178,11 @@ impl<'a> BytesIter<'a> {
             ret.extend_from_slice(v);
         }
         ret
+    }
+
+    /// compute the total length of all contained slices
+    pub fn len(&self) -> usize {
+        self.map(|v| v.len()).sum()
     }
 }
 

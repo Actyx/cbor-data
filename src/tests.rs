@@ -248,6 +248,12 @@ fn bytes() {
     c!("40" => () Bytes(b"") => "h''");
     c!("4401020304" => () Bytes([1, 2, 3, 4]) => "h'01020304'");
     c!("5f42010243030405ff" => () Bytes([1, 2, 3, 4, 5]) => "(_ h'0102', h'030405')" ("h'0102030405'"));
+
+    let len = match str_to_cbor("5f42010243030405ff", true).tagged_item().kind() {
+        Bytes(b) => b.len(),
+        _ => panic!("wat"),
+    };
+    assert_eq!(len, 5);
 }
 
 #[test]
@@ -260,6 +266,15 @@ fn strings() {
     c!("63e6b0b4" => () Str("\u{6c34}") => "\"\u{6c34}\"");
     c!("64f0908591" => () Str("\u{10151}") => "\"\u{10151}\"");
     c!("7f657374726561646d696e67ff" => () Str("streaming") => "(_ \"strea\", \"ming\")" ("\"streaming\""));
+
+    let len = match str_to_cbor("7f657374726561646d696e67ff", true)
+        .tagged_item()
+        .kind()
+    {
+        Str(s) => s.len(),
+        _ => panic!("wat"),
+    };
+    assert_eq!(len, 9);
 }
 
 #[test]

@@ -47,6 +47,24 @@ impl<'a> Debug for ItemKind<'a> {
     }
 }
 
+impl<'a> Display for ItemKind<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ItemKind::Pos(_) => write!(f, "positive number"),
+            ItemKind::Neg(_) => write!(f, "negative number"),
+            ItemKind::Float(_) => write!(f, "floating-point number"),
+            ItemKind::Str(_) => write!(f, "text string"),
+            ItemKind::Bytes(_) => write!(f, "byte string"),
+            ItemKind::Bool(_) => write!(f, "boolean"),
+            ItemKind::Null => write!(f, "null"),
+            ItemKind::Undefined => write!(f, "undefined"),
+            ItemKind::Simple(_) => write!(f, "simple value"),
+            ItemKind::Array(_) => write!(f, "array"),
+            ItemKind::Dict(_) => write!(f, "dictionary"),
+        }
+    }
+}
+
 impl<'a> ItemKind<'a> {
     pub fn new(cbor: &'a Cbor) -> Self {
         super::item(cbor.as_slice())

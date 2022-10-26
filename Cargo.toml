@@ -1,6 +1,6 @@
 [package]
 name = "cbor-data"
-version = "0.8.4"
+version = "0.8.5"
 authors = ["Roland Kuhn <rk@rkuhn.info>"]
 edition = "2018"
 description = "A library for using CBOR as in-memory representation for working with dynamically shaped data"
