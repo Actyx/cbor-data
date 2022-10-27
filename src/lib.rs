@@ -412,6 +412,13 @@ impl CborOwned {
     pub fn canonical(bytes: impl AsRef<[u8]>) -> Result<Self, ParseError> {
         canonicalise(bytes.as_ref(), CborBuilder::new())
     }
+
+    /// Hand out the underlying SmallVec as a Vec<u8>
+    ///
+    /// Will only allocate if the item is at most 16 bytes long.
+    pub fn into_vec(self) -> Vec<u8> {
+        self.0.into_vec()
+    }
 }
 
 /// Generate an iterator of [`PathElement`](struct.PathElement.html) from a string
