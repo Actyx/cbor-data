@@ -4,7 +4,7 @@ use crate::{
     validated::{item::ItemKindShort, tags::TagsShort},
     Cbor, Encoder, ItemKind, TaggedItem, Writer,
 };
-use std::{borrow::Cow, collections::BTreeMap, error::Error, fmt::Write};
+use std::{borrow::Cow, collections::BTreeMap, error::Error};
 
 #[derive(Debug)]
 pub enum CodecError {
@@ -17,7 +17,8 @@ pub enum CodecError {
         expected: usize,
         found: usize,
     },
-    Custom(Box<dyn Error>),
+    Custom(Box<dyn Error + Send + Sync>),
+    String(String),
 }
 
 impl CodecError {
@@ -33,8 +34,12 @@ impl CodecError {
         Self::TupleSize { expected, found }
     }
 
-    pub fn custom(err: Box<dyn Error>) -> Self {
-        Self::Custom(err)
+    pub fn custom(err: impl Error + Send + Sync + 'static) -> Self {
+        Self::Custom(Box::new(err))
+    }
+
+    pub fn string(err: impl Into<String>) -> Self {
+        Self::String(err.into())
     }
 }
 
@@ -52,19 +57,20 @@ impl std::fmt::Display for CodecError {
                 expected, found
             ),
             CodecError::Custom(err) => write!(f, "codec error: {}", err),
+            CodecError::String(err) => write!(f, "codec error: {}", err),
         }
     }
 }
 impl Error for CodecError {}
 
-type Result<T> = std::result::Result<T, CodecError>;
+pub type Result<T> = std::result::Result<T, CodecError>;
 
 pub trait WriteCbor {
     fn write_cbor<W: Writer>(&self, w: W) -> W::Output;
 }
 
 pub trait ReadCbor {
-    fn fmt(f: &mut impl Write) -> std::fmt::Result;
+    fn fmt(f: &mut impl std::fmt::Write) -> std::fmt::Result;
 
     fn name() -> String {
         let mut s = String::new();
@@ -92,7 +98,7 @@ impl<T: WriteCbor> WriteCbor for Vec<T> {
 }
 
 impl<T: ReadCbor> ReadCbor for Vec<T> {
-    fn fmt(f: &mut impl Write) -> std::fmt::Result {
+    fn fmt(f: &mut impl std::fmt::Write) -> std::fmt::Result {
         write!(f, "Vec<")?;
         T::fmt(f)?;
         write!(f, ">")?;
@@ -143,7 +149,7 @@ impl ReadCbor for Vec<u8> {
         Ok(<[u8]>::read_cbor_borrowed(cbor)?.into_owned())
     }
 
-    fn fmt(f: &mut impl Write) -> std::fmt::Result {
+    fn fmt(f: &mut impl std::fmt::Write) -> std::fmt::Result {
         write!(f, "Vec<u8>")
     }
 }
@@ -169,7 +175,7 @@ impl<'a> ReadCborBorrowed<'a> for str {
 }
 
 impl ReadCbor for String {
-    fn fmt(f: &mut impl Write) -> std::fmt::Result {
+    fn fmt(f: &mut impl std::fmt::Write) -> std::fmt::Result {
         write!(f, "String")
     }
 
@@ -203,7 +209,7 @@ impl<T: ReadCbor> ReadCbor for Option<T> {
         }
     }
 
-    fn fmt(f: &mut impl Write) -> std::fmt::Result {
+    fn fmt(f: &mut impl std::fmt::Write) -> std::fmt::Result {
         write!(f, "Option<")?;
         T::fmt(f)?;
         write!(f, ">")?;
@@ -237,7 +243,7 @@ impl<K: ReadCbor + Ord, V: ReadCbor> ReadCbor for BTreeMap<K, V> {
         Ok(map)
     }
 
-    fn fmt(f: &mut impl Write) -> std::fmt::Result {
+    fn fmt(f: &mut impl std::fmt::Write) -> std::fmt::Result {
         write!(f, "BTreeMap<")?;
         K::fmt(f)?;
         write!(f, ", ")?;
@@ -265,7 +271,7 @@ impl ReadCbor for u64 {
         }
     }
 
-    fn fmt(f: &mut impl Write) -> std::fmt::Result {
+    fn fmt(f: &mut impl std::fmt::Write) -> std::fmt::Result {
         write!(f, "u64")
     }
 }
@@ -297,7 +303,7 @@ macro_rules! tuple {
                 Ok(($($t),*))
             }
 
-            fn fmt(f: &mut impl Write) -> std::fmt::Result {
+            fn fmt(f: &mut impl ::std::fmt::Write) -> std::fmt::Result {
                 write!(f, "(")?;
                 $(
                     $t::fmt(f)?;
@@ -342,7 +348,7 @@ macro_rules! cbor_via {
                 Ok(Self::from(<$u>::read_cbor(cbor)?))
             }
 
-            fn fmt(f: &mut impl Write) -> std::fmt::Result {
+            fn fmt(f: &mut impl ::std::fmt::Write) -> std::fmt::Result {
                 write!(f, stringify!($t))
             }
         }
@@ -365,7 +371,7 @@ macro_rules! cbor_try_via {
                 Ok(Self::try_from(<$u>::read_cbor(cbor)?)?)
             }
 
-            fn fmt(f: &mut impl Write) -> std::fmt::Result {
+            fn fmt(f: &mut impl ::std::fmt::Write) -> std::fmt::Result {
                 write!(f, stringify!($t))
             }
         }
@@ -402,7 +408,7 @@ mod tests {
     impl Error for Z {}
     impl From<Z> for CodecError {
         fn from(z: Z) -> Self {
-            Self::Custom(Box::new(z))
+            Self::custom(z)
         }
     }
     #[derive(Debug, PartialEq)]
