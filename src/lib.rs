@@ -10,6 +10,7 @@ use std::{
 mod builder;
 mod canonical;
 mod check;
+pub mod codec;
 pub mod constants;
 mod error;
 mod reader;
@@ -30,7 +31,7 @@ pub use validated::{
     indexing::{IndexStr, PathElement},
     item::{ItemKind, TaggedItem},
     iterators::{ArrayIter, BytesIter, DictIter, StringIter},
-    tags::Tags,
+    tags::{Tags, TagsShort},
 };
 pub use value::CborValue;
 pub use visit::Visitor;

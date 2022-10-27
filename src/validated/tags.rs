@@ -75,3 +75,24 @@ impl<'a> Iterator for Tags<'a> {
         }
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TagsShort {
+    None,
+    Single(u64),
+    Multiple,
+}
+
+impl<'a> From<Tags<'a>> for TagsShort {
+    fn from(mut tags: Tags<'a>) -> Self {
+        if let Some(tag) = tags.next() {
+            if tags.next().is_none() {
+                Self::Single(tag)
+            } else {
+                Self::Multiple
+            }
+        } else {
+            Self::None
+        }
+    }
+}

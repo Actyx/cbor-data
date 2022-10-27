@@ -69,7 +69,7 @@ dependencies = [
 
 [[package]]
 name = "cbor-data"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "base64",
  "chrono",

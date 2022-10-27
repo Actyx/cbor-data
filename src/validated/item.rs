@@ -71,6 +71,57 @@ impl<'a> ItemKind<'a> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ItemKindShort {
+    Pos,
+    Neg,
+    Float,
+    Str,
+    Bytes,
+    Bool,
+    Null,
+    Undefined,
+    Simple,
+    Array,
+    Dict,
+}
+
+impl Display for ItemKindShort {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ItemKindShort::Pos => write!(f, "positive number"),
+            ItemKindShort::Neg => write!(f, "negative number"),
+            ItemKindShort::Float => write!(f, "floating-point number"),
+            ItemKindShort::Str => write!(f, "text string"),
+            ItemKindShort::Bytes => write!(f, "byte string"),
+            ItemKindShort::Bool => write!(f, "boolean"),
+            ItemKindShort::Null => write!(f, "null"),
+            ItemKindShort::Undefined => write!(f, "undefined"),
+            ItemKindShort::Simple => write!(f, "simple value"),
+            ItemKindShort::Array => write!(f, "array"),
+            ItemKindShort::Dict => write!(f, "dictionary"),
+        }
+    }
+}
+
+impl<'a> From<ItemKind<'a>> for ItemKindShort {
+    fn from(kind: ItemKind<'a>) -> Self {
+        match kind {
+            ItemKind::Pos(_) => ItemKindShort::Pos,
+            ItemKind::Neg(_) => ItemKindShort::Neg,
+            ItemKind::Float(_) => ItemKindShort::Float,
+            ItemKind::Str(_) => ItemKindShort::Str,
+            ItemKind::Bytes(_) => ItemKindShort::Bytes,
+            ItemKind::Bool(_) => ItemKindShort::Bool,
+            ItemKind::Null => ItemKindShort::Null,
+            ItemKind::Undefined => ItemKindShort::Undefined,
+            ItemKind::Simple(_) => ItemKindShort::Simple,
+            ItemKind::Array(_) => ItemKindShort::Array,
+            ItemKind::Dict(_) => ItemKindShort::Dict,
+        }
+    }
+}
+
 /// Representation of a possibly tagged CBOR data item
 ///
 /// You can obtain this representation using [`Cbor::tagged_item`](struct.Cbor.html#method.tagged_item).
