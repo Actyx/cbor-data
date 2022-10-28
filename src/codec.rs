@@ -331,7 +331,7 @@ macro_rules! cbor_via {
         impl $crate::codec::WriteCbor for $t {
             fn write_cbor<W: $crate::Writer>(&self, w: W) -> W::Output {
                 let $x: &$t = self;
-                let u: $u = $xx;
+                let u = $xx;
                 $crate::codec::WriteCbor::write_cbor(&u, w)
             }
         }
@@ -350,7 +350,7 @@ macro_rules! cbor_via {
         }
     };
     ($t:ty => $u:ty: INTO, $($rest:tt)*) => {
-        cbor_via!($t => $u: |x| -> x.into(), $($rest)*);
+        cbor_via!($t => $u: |x| -> <$u>::from(x), $($rest)*);
     };
     ($t:ty => $u:ty: |$x:ident| -> $xx:expr, FROM) => {
         cbor_via!($t => $u: |$x| -> $xx, |x| -> Ok(x.into()));
