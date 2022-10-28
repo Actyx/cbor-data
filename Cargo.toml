@@ -1,6 +1,6 @@
 [package]
 name = "cbor-data"
-version = "0.8.10"
+version = "0.8.11"
 authors = ["Roland Kuhn <rk@rkuhn.info>"]
 edition = "2018"
 description = "A library for using CBOR as in-memory representation for working with dynamically shaped data"
@@ -13,10 +13,11 @@ repository = "https://github.com/Actyx/cbor-data"
 rfc3339 = ["chrono"]
 
 [dependencies]
-half = "1.6.0"
 base64 = "0.13.0"
-smallvec = "1.6.1"
 chrono = { version = "0.4.19", optional = true }
+half = "1.6.0"
+libipld14 = { package = "libipld", version = "0.14", default-features = false, features = ["dag-cbor"], optional = true }
+smallvec = { version = "1.6.1", features = ["const_generics", "write"] }
 
 [dev-dependencies]
 criterion = "0.3"

@@ -38,7 +38,7 @@ impl CodecError {
         Self::Custom(Box::new(err))
     }
 
-    pub fn string(err: impl Into<String>) -> Self {
+    pub fn str(err: impl Into<String>) -> Self {
         Self::String(err.into())
     }
 }
@@ -334,7 +334,7 @@ impl<T: ?Sized + WriteCbor> WriteCbor for &T {
 
 #[macro_export]
 macro_rules! cbor_via {
-    ($t:ty => $u:ty: |$x:ident| -> $xx:expr, |$y:ident| -> $yy:expr) => {
+    ($t:ty => $u:ty: |$x:pat| -> $xx:expr, |$y:pat| -> $yy:expr) => {
         impl $crate::codec::WriteCbor for $t {
             fn write_cbor<W: $crate::Writer>(&self, w: W) -> W::Output {
                 let $x: &$t = self;
@@ -365,6 +365,94 @@ macro_rules! cbor_via {
     ($t:ty => $u:ty) => {
         cbor_via!($t => $u: INTO, FROM);
     };
+}
+
+#[cfg(feature = "libipld14")]
+mod impl_libipld14 {
+    use super::*;
+    use libipld14::{
+        cbor::DagCborCodec,
+        prelude::{Codec, Encode},
+        store::StoreParams,
+        Block, Cid, Ipld,
+    };
+    use smallvec::SmallVec;
+
+    impl WriteCbor for Cid {
+        fn write_cbor<W: Writer>(&self, w: W) -> W::Output {
+            let mut bytes = SmallVec::<[u8; 128]>::new();
+            self.write_bytes(&mut bytes).expect("writing to SmallVec");
+            w.write_bytes_chunked([&[0][..], &*bytes], [42])
+        }
+    }
+
+    impl ReadCbor for Cid {
+        fn fmt(f: &mut impl std::fmt::Write) -> std::fmt::Result {
+            write!(f, "Cid")
+        }
+
+        fn read_cbor(cbor: &Cbor) -> Result<Self>
+        where
+            Self: Sized,
+        {
+            let decoded = cbor.tagged_item();
+            if let (Some(42), ItemKind::Bytes(b)) = (decoded.tags().single(), decoded.kind()) {
+                let b = b.as_cow();
+                if b.is_empty() {
+                    Err(CodecError::str("Cid cannot be empty"))
+                } else if b[0] != 0 {
+                    Err(CodecError::str("Cid must use identity encoding"))
+                } else {
+                    Cid::read_bytes(&b[1..]).map_err(CodecError::custom)
+                }
+            } else {
+                Err(CodecError::type_error("Cid", &decoded))
+            }
+        }
+    }
+
+    impl<S: StoreParams> WriteCbor for Block<S> {
+        fn write_cbor<W: Writer>(&self, w: W) -> W::Output {
+            (self.cid(), self.data()).write_cbor(w)
+        }
+    }
+
+    impl<S: StoreParams> ReadCbor for Block<S> {
+        fn fmt(f: &mut impl std::fmt::Write) -> std::fmt::Result {
+            write!(f, "Block")
+        }
+
+        fn read_cbor(cbor: &Cbor) -> Result<Self>
+        where
+            Self: Sized,
+        {
+            let (cid, data) = <(Cid, Vec<u8>)>::read_cbor(cbor)?;
+            Self::new(cid, data).map_err(|err| CodecError::str(err.to_string()))
+        }
+    }
+
+    impl WriteCbor for Ipld {
+        fn write_cbor<W: Writer>(&self, mut w: W) -> W::Output {
+            w.bytes(|b| self.encode(DagCborCodec, b))
+                .expect("WriteCbor for Ipld");
+            w.into_output()
+        }
+    }
+
+    impl ReadCbor for Ipld {
+        fn fmt(f: &mut impl std::fmt::Write) -> std::fmt::Result {
+            write!(f, "Ipld")
+        }
+
+        fn read_cbor(cbor: &Cbor) -> Result<Self>
+        where
+            Self: Sized,
+        {
+            DagCborCodec
+                .decode(cbor.as_slice())
+                .map_err(|err| CodecError::Custom(err.into()))
+        }
+    }
 }
 
 #[cfg(test)]
