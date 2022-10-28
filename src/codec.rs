@@ -22,7 +22,7 @@ pub enum CodecError {
 }
 
 impl CodecError {
-    pub fn type_error(target: &'static str, item: TaggedItem<'_>) -> Self {
+    pub fn type_error(target: &'static str, item: &TaggedItem<'_>) -> Self {
         Self::TypeError {
             target,
             kind: item.kind().into(),
@@ -112,7 +112,7 @@ impl<T: ReadCbor> ReadCbor for Vec<T> {
         let d = cbor.decode();
         let a = d
             .as_array()
-            .ok_or_else(|| CodecError::type_error("Vec", cbor.tagged_item()))?;
+            .ok_or_else(|| CodecError::type_error("Vec", &cbor.tagged_item()))?;
         let mut v = Vec::with_capacity(a.len());
         for item in a {
             v.push(T::read_cbor(item.as_ref())?);
@@ -137,7 +137,7 @@ impl<'a> ReadCborBorrowed<'a> for [u8] {
     fn read_cbor_borrowed(cbor: &'a Cbor) -> Result<Cow<'a, Self>> {
         cbor.decode()
             .to_bytes()
-            .ok_or_else(|| CodecError::type_error("byte slice", cbor.tagged_item()))
+            .ok_or_else(|| CodecError::type_error("byte slice", &cbor.tagged_item()))
     }
 }
 
@@ -170,7 +170,7 @@ impl<'a> ReadCborBorrowed<'a> for str {
     fn read_cbor_borrowed(cbor: &'a Cbor) -> Result<Cow<'a, Self>> {
         cbor.decode()
             .to_str()
-            .ok_or_else(|| CodecError::type_error("String", cbor.tagged_item()))
+            .ok_or_else(|| CodecError::type_error("String", &cbor.tagged_item()))
     }
 }
 
@@ -236,7 +236,7 @@ impl<K: ReadCbor + Ord, V: ReadCbor> ReadCbor for BTreeMap<K, V> {
         for (k, v) in cbor
             .decode()
             .to_dict()
-            .ok_or_else(|| CodecError::type_error("BTreeMap", cbor.tagged_item()))?
+            .ok_or_else(|| CodecError::type_error("BTreeMap", &cbor.tagged_item()))?
         {
             map.insert(K::read_cbor(k.as_ref())?, V::read_cbor(v.as_ref())?);
         }
@@ -267,7 +267,7 @@ impl ReadCbor for u64 {
         let item = cbor.tagged_item();
         match item.kind() {
             ItemKind::Pos(x) => Ok(x),
-            _ => Err(CodecError::type_error("u64", item)),
+            _ => Err(CodecError::type_error("u64", &item)),
         }
     }
 
@@ -290,7 +290,7 @@ macro_rules! tuple {
         impl<$($t: ReadCbor),*> ReadCbor for ($($t),*) {
             #[allow(unused_assignments, non_snake_case)]
             fn read_cbor(cbor: &Cbor) -> Result<Self> {
-                let d = cbor.decode().to_array().ok_or_else(|| CodecError::type_error("tuple", cbor.tagged_item()))?;
+                let d = cbor.decode().to_array().ok_or_else(|| CodecError::type_error("tuple", &cbor.tagged_item()))?;
                 let len = $({const $t: usize = 1; $t}+)* 0;
                 if d.len() < len {
                     return Err(CodecError::tuple_size(len, d.len()));
@@ -335,13 +335,13 @@ impl<T: ?Sized + WriteCbor> WriteCbor for &T {
 #[macro_export]
 macro_rules! cbor_via {
     ($t:ty => $u:ty) => {
-        impl WriteCbor for $t {
-            fn write_cbor<W: Writer>(&self, w: W) -> W::Output {
+        impl $crate::codec::WriteCbor for $t {
+            fn write_cbor<W: $crate::Writer>(&self, w: W) -> W::Output {
                 <$u>::from(self).write_cbor(w)
             }
         }
-        impl ReadCbor for $t {
-            fn read_cbor(cbor: &Cbor) -> Result<Self>
+        impl $crate::codec::ReadCbor for $t {
+            fn read_cbor(cbor: &$crate::Cbor) -> $crate::codec::Result<Self>
             where
                 Self: Sized,
             {
@@ -358,17 +358,17 @@ macro_rules! cbor_via {
 #[macro_export]
 macro_rules! cbor_try_via {
     ($t:ty => $u:ty) => {
-        impl WriteCbor for $t {
-            fn write_cbor<W: Writer>(&self, w: W) -> W::Output {
+        impl $crate::codec::WriteCbor for $t {
+            fn write_cbor<W: $crate::Writer>(&self, w: W) -> W::Output {
                 <$u>::from(self).write_cbor(w)
             }
         }
-        impl ReadCbor for $t {
-            fn read_cbor(cbor: &Cbor) -> Result<Self>
+        impl $crate::codec::ReadCbor for $t {
+            fn read_cbor(cbor: &$crate::Cbor) -> $crate::codec::Result<Self>
             where
                 Self: Sized,
             {
-                Ok(Self::try_from(<$u>::read_cbor(cbor)?)?)
+                Ok(::std::convert::TryFrom::try_from(<$u>::read_cbor(cbor)?)?)
             }
 
             fn fmt(f: &mut impl ::std::fmt::Write) -> std::fmt::Result {
@@ -396,7 +396,10 @@ mod tests {
             x.0
         }
     }
-    cbor_via!(X => u64);
+    mod priv1 {
+        use super::X;
+        cbor_via!(X => u64);
+    }
 
     #[derive(Debug)]
     struct Z;
@@ -424,7 +427,9 @@ mod tests {
             y.0
         }
     }
-    cbor_try_via!(Y => u64);
+    mod priv2 {
+        cbor_try_via!(super::Y => u64);
+    }
 
     #[test]
     fn via() {
@@ -433,7 +438,7 @@ mod tests {
         let x = X::read_cbor(&*bytes).unwrap();
         assert_eq!(x, X(5));
 
-        assert_eq!(Y::name(), "Y");
+        assert_eq!(Y::name(), "super::Y");
         let bytes = Y(5).write_cbor(CborBuilder::default());
         let y = Y::read_cbor(&*bytes).unwrap();
         assert_eq!(y, Y(5));
