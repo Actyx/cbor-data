@@ -1,7 +1,7 @@
 //! This module is experimental!
 
 use super::TypeError;
-use crate::{Cbor, Encoder, ItemKind, TaggedItem, Writer};
+use crate::{Cbor, CborOwned, Encoder, ItemKind, TaggedItem, Writer};
 use std::{borrow::Cow, collections::BTreeMap, error::Error};
 
 #[derive(Debug)]
@@ -266,6 +266,37 @@ impl ReadCbor for u64 {
 
     fn fmt(f: &mut impl std::fmt::Write) -> std::fmt::Result {
         write!(f, "u64")
+    }
+}
+
+impl WriteCbor for Cbor {
+    fn write_cbor<W: Writer>(&self, w: W) -> W::Output {
+        w.write_trusting(self.as_slice())
+    }
+}
+
+impl WriteCbor for CborOwned {
+    fn write_cbor<W: Writer>(&self, w: W) -> W::Output {
+        w.write_trusting(self.as_slice())
+    }
+}
+
+impl<'a> ReadCborBorrowed<'a> for Cbor {
+    fn read_cbor_borrowed(cbor: &'a Cbor) -> Result<Cow<'a, Self>> {
+        Ok(Cow::Borrowed(cbor))
+    }
+}
+
+impl ReadCbor for CborOwned {
+    fn fmt(f: &mut impl std::fmt::Write) -> std::fmt::Result {
+        write!(f, "Cbor")
+    }
+
+    fn read_cbor(cbor: &Cbor) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        Ok(<Cbor>::read_cbor_borrowed(cbor)?.into_owned())
     }
 }
 
