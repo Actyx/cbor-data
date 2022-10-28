@@ -2,6 +2,7 @@
 
 use std::{
     borrow::{Borrow, Cow},
+    collections::BTreeMap,
     convert::TryFrom,
     fmt::{Debug, Display, Write},
     ops::Deref,
@@ -29,7 +30,7 @@ pub use error::{ErrorKind, ParseError, WhileParsing};
 pub use reader::Literal;
 pub use validated::{
     indexing::{IndexStr, PathElement},
-    item::{ItemKind, TaggedItem},
+    item::{ItemKind, ItemKindShort, TaggedItem},
     iterators::{ArrayIter, BytesIter, DictIter, StringIter},
     tags::{Tags, TagsShort},
 };
@@ -276,6 +277,90 @@ impl Cbor {
         TaggedItem::new(self)
     }
 
+    /// More efficient shortcut for `.decode().is_null()` with error reporting.
+    pub fn try_null(&self) -> Result<(), TypeError> {
+        let item = self.tagged_item();
+        if CborValue::new(item).is_null() {
+            Ok(())
+        } else {
+            Err(TypeError {
+                target: "null",
+                kind: item.kind().into(),
+                tags: item.tags().into(),
+            })
+        }
+    }
+
+    /// More efficient shortcut for `.decode().as_bool()` with error reporting.
+    pub fn try_bool(&self) -> Result<bool, TypeError> {
+        let item = self.tagged_item();
+        CborValue::new(item).as_bool().ok_or(TypeError {
+            target: "boolean",
+            kind: item.kind().into(),
+            tags: item.tags().into(),
+        })
+    }
+
+    /// More efficient shortcut for `.decode().to_number()` with error reporting.
+    pub fn try_number(&self) -> Result<value::Number, TypeError> {
+        let item = self.tagged_item();
+        CborValue::new(item).to_number().ok_or(TypeError {
+            target: "number",
+            kind: item.kind().into(),
+            tags: item.tags().into(),
+        })
+    }
+
+    /// More efficient shortcut for `.decode().as_timestamp()` with error reporting.
+    pub fn try_timestamp(&self) -> Result<value::Timestamp, TypeError> {
+        let item = self.tagged_item();
+        CborValue::new(item).as_timestamp().ok_or(TypeError {
+            target: "timestamp",
+            kind: item.kind().into(),
+            tags: item.tags().into(),
+        })
+    }
+
+    /// More efficient shortcut for `.decode().to_bytes()` with error reporting.
+    pub fn try_bytes(&self) -> Result<Cow<[u8]>, TypeError> {
+        let item = self.tagged_item();
+        CborValue::new(item).to_bytes().ok_or(TypeError {
+            target: "byte string",
+            kind: item.kind().into(),
+            tags: item.tags().into(),
+        })
+    }
+
+    /// More efficient shortcut for `.decode().to_str()` with error reporting.
+    pub fn try_str(&self) -> Result<Cow<str>, TypeError> {
+        let item = self.tagged_item();
+        CborValue::new(item).to_str().ok_or(TypeError {
+            target: "string",
+            kind: item.kind().into(),
+            tags: item.tags().into(),
+        })
+    }
+
+    /// More efficient shortcut for `.decode().to_array()` with error reporting.
+    pub fn try_array(&self) -> Result<Vec<Cow<Cbor>>, TypeError> {
+        let item = self.tagged_item();
+        CborValue::new(item).to_array().ok_or(TypeError {
+            target: "array",
+            kind: item.kind().into(),
+            tags: item.tags().into(),
+        })
+    }
+
+    /// More efficient shortcut for `.decode().to_dict()` with error reporting.
+    pub fn try_dict(&self) -> Result<BTreeMap<Cow<Cbor>, Cow<Cbor>>, TypeError> {
+        let item = self.tagged_item();
+        CborValue::new(item).to_dict().ok_or(TypeError {
+            target: "dictionary",
+            kind: item.kind().into(),
+            tags: item.tags().into(),
+        })
+    }
+
     /// Extract a value by indexing into arrays and dicts, with path elements yielded by an iterator.
     ///
     /// Returns None if an index doesn’t exist or the indexed object is neither an array nor a dict.
@@ -328,6 +413,24 @@ impl Cbor {
         visit(visitor, self.tagged_item())
     }
 }
+
+#[derive(Debug, Clone, Copy)]
+pub struct TypeError {
+    target: &'static str,
+    kind: ItemKindShort,
+    tags: TagsShort,
+}
+
+impl Display for TypeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "type error when reading {}: found {} (tags: {:?})",
+            self.target, self.kind, self.tags
+        )
+    }
+}
+impl std::error::Error for TypeError {}
 
 /// Wrapper around a vector of bytes, for parsing as CBOR.
 ///

@@ -1,33 +1,24 @@
 //! This module is experimental!
 
-use crate::{
-    validated::{item::ItemKindShort, tags::TagsShort},
-    Cbor, Encoder, ItemKind, TaggedItem, Writer,
-};
+use super::TypeError;
+use crate::{Cbor, Encoder, ItemKind, TaggedItem, Writer};
 use std::{borrow::Cow, collections::BTreeMap, error::Error};
 
 #[derive(Debug)]
 pub enum CodecError {
-    TypeError {
-        target: &'static str,
-        kind: ItemKindShort,
-        tags: TagsShort,
-    },
-    TupleSize {
-        expected: usize,
-        found: usize,
-    },
+    TypeError(TypeError),
+    TupleSize { expected: usize, found: usize },
     Custom(Box<dyn Error + Send + Sync>),
     String(String),
 }
 
 impl CodecError {
     pub fn type_error(target: &'static str, item: &TaggedItem<'_>) -> Self {
-        Self::TypeError {
+        Self::TypeError(TypeError {
             target,
             kind: item.kind().into(),
             tags: item.tags().into(),
-        }
+        })
     }
 
     pub fn tuple_size(expected: usize, found: usize) -> Self {
@@ -46,11 +37,7 @@ impl CodecError {
 impl std::fmt::Display for CodecError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CodecError::TypeError { target, kind, tags } => write!(
-                f,
-                "type error while reading {}, found {} (tags: {:?})",
-                target, kind, tags
-            ),
+            CodecError::TypeError(e) => write!(f, "{}", e),
             CodecError::TupleSize { expected, found } => write!(
                 f,
                 "wrong tuple size: expected {}, found {}",
@@ -62,6 +49,12 @@ impl std::fmt::Display for CodecError {
     }
 }
 impl Error for CodecError {}
+
+impl From<TypeError> for CodecError {
+    fn from(te: TypeError) -> Self {
+        Self::TypeError(te)
+    }
+}
 
 pub type Result<T> = std::result::Result<T, CodecError>;
 
