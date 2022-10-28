@@ -334,10 +334,12 @@ impl<T: ?Sized + WriteCbor> WriteCbor for &T {
 
 #[macro_export]
 macro_rules! cbor_via {
-    ($t:ty => $u:ty) => {
+    ($t:ty => $u:ty: |$x:ident| -> $xx:expr, |$y:ident| -> $yy:expr) => {
         impl $crate::codec::WriteCbor for $t {
             fn write_cbor<W: $crate::Writer>(&self, w: W) -> W::Output {
-                <$u>::from(self).write_cbor(w)
+                let $x: &$t = self;
+                let u: $u = $xx;
+                $crate::codec::WriteCbor::write_cbor(&u, w)
             }
         }
         impl $crate::codec::ReadCbor for $t {
@@ -345,7 +347,8 @@ macro_rules! cbor_via {
             where
                 Self: Sized,
             {
-                Ok(Self::from(<$u>::read_cbor(cbor)?))
+                let $y = <$u>::read_cbor(cbor)?;
+                $yy
             }
 
             fn fmt(f: &mut impl ::std::fmt::Write) -> std::fmt::Result {
@@ -353,28 +356,14 @@ macro_rules! cbor_via {
             }
         }
     };
-}
-
-#[macro_export]
-macro_rules! cbor_try_via {
+    ($t:ty => $u:ty: INTO, $($rest:tt)*) => {
+        cbor_via!($t => $u: |x| -> x.into(), $($rest)*);
+    };
+    ($t:ty => $u:ty: |$x:ident| -> $xx:expr, FROM) => {
+        cbor_via!($t => $u: |$x| -> $xx, |x| -> Ok(x.into()));
+    };
     ($t:ty => $u:ty) => {
-        impl $crate::codec::WriteCbor for $t {
-            fn write_cbor<W: $crate::Writer>(&self, w: W) -> W::Output {
-                <$u>::from(self).write_cbor(w)
-            }
-        }
-        impl $crate::codec::ReadCbor for $t {
-            fn read_cbor(cbor: &$crate::Cbor) -> $crate::codec::Result<Self>
-            where
-                Self: Sized,
-            {
-                Ok(::std::convert::TryFrom::try_from(<$u>::read_cbor(cbor)?)?)
-            }
-
-            fn fmt(f: &mut impl ::std::fmt::Write) -> std::fmt::Result {
-                write!(f, stringify!($t))
-            }
-        }
+        cbor_via!($t => $u: INTO, FROM);
     };
 }
 
@@ -409,11 +398,6 @@ mod tests {
         }
     }
     impl Error for Z {}
-    impl From<Z> for CodecError {
-        fn from(z: Z) -> Self {
-            Self::custom(z)
-        }
-    }
     #[derive(Debug, PartialEq)]
     struct Y(u64);
     impl TryFrom<u64> for Y {
@@ -422,13 +406,11 @@ mod tests {
             Ok(Y(y))
         }
     }
-    impl From<&Y> for u64 {
-        fn from(y: &Y) -> Self {
-            y.0
-        }
-    }
     mod priv2 {
-        cbor_try_via!(super::Y => u64);
+        use crate::codec::CodecError;
+        use std::convert::TryInto;
+
+        cbor_via!(super::Y => u64: |x| -> x.0, |x| -> x.try_into().map_err(CodecError::custom));
     }
 
     #[test]
