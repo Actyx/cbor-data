@@ -25,6 +25,9 @@ pub trait Writer: Sized {
     /// Configured maximum array or dict length up to which definite size encoding is used.
     fn max_definite(&self) -> Option<u64>;
 
+    /// Set the maximum array or dict length up to which definite size encoding is used.
+    fn set_max_definite(&mut self, max: Option<u64>);
+
     /// Write a unsigned value of up to 64 bits.
     /// Tags are from outer to inner.
     fn write_pos(mut self, value: u64, tags: impl IntoIterator<Item = u64>) -> Self::Output {
@@ -272,5 +275,9 @@ where
 
     fn max_definite(&self) -> Option<u64> {
         (**self).max_definite()
+    }
+
+    fn set_max_definite(&mut self, max: Option<u64>) {
+        (**self).set_max_definite(max);
     }
 }

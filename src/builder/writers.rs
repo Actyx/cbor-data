@@ -55,6 +55,10 @@ impl<'a> Writer for ArrayWriter<'a> {
     fn max_definite(&self) -> Option<u64> {
         self.max_definite
     }
+
+    fn set_max_definite(&mut self, max: Option<u64>) {
+        self.max_definite = max;
+    }
 }
 
 /// Builder for a dict value, used by `write_dict_rec()`.
@@ -140,6 +144,10 @@ impl<'a, 'b> Writer for KeyBuilder<'a, 'b> {
     fn max_definite(&self) -> Option<u64> {
         self.0.max_definite
     }
+
+    fn set_max_definite(&mut self, max: Option<u64>) {
+        self.0.set_max_definite(max);
+    }
 }
 
 /// Builder for the single value of a dict key.
@@ -170,5 +178,9 @@ impl<'a, 'b> Writer for SingleBuilder<'a, 'b> {
 
     fn max_definite(&self) -> Option<u64> {
         self.0.max_definite
+    }
+
+    fn set_max_definite(&mut self, max: Option<u64>) {
+        self.0.set_max_definite(max);
     }
 }

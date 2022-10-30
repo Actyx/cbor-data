@@ -144,4 +144,8 @@ impl<'a, O: CborOutput> Writer for CborBuilder<'a, O> {
     fn max_definite(&self) -> Option<u64> {
         self.max_definite
     }
+
+    fn set_max_definite(&mut self, max: Option<u64>) {
+        self.max_definite = max;
+    }
 }
