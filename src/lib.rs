@@ -414,7 +414,7 @@ impl Cbor {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub struct TypeError {
     target: &'static str,
     kind: ItemKindShort,

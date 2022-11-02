@@ -111,6 +111,7 @@ name = "cbor-data"
 version = "0.8.14"
 dependencies = [
  "base64",
+ "cbor-data-derive",
  "chrono",
  "criterion",
  "half",
@@ -122,6 +123,15 @@ dependencies = [
  "serde_cbor",
  "serde_json",
  "smallvec",
+]
+
+[[package]]
+name = "cbor-data-derive"
+version = "0.8.14"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

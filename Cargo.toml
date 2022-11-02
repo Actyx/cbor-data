@@ -1,3 +1,6 @@
+[workspace]
+members = [".", "derive"]
+
 [package]
 name = "cbor-data"
 version = "0.8.14"
@@ -11,6 +14,7 @@ repository = "https://github.com/Actyx/cbor-data"
 
 [features]
 rfc3339 = ["chrono"]
+derive = ["dep:cbor-data-derive"]
 
 [dependencies]
 base64 = "0.13.0"
@@ -18,6 +22,7 @@ chrono = { version = "0.4.19", optional = true }
 half = "1.6.0"
 libipld14 = { package = "libipld", version = "0.14", default-features = false, features = ["dag-cbor"], optional = true }
 smallvec = { version = "1.6.1", features = ["const_generics", "write"] }
+cbor-data-derive = { version = "=0.8.14", path = "derive", optional = true }
 
 [dev-dependencies]
 criterion = "0.3"
@@ -30,6 +35,7 @@ serde_json = "1"
 
 [lib]
 crate-type = ["rlib"]
+proc-macro = true
 
 [profile.release]
 debug = false
