@@ -108,7 +108,7 @@ dependencies = [
 
 [[package]]
 name = "cbor-data"
-version = "0.8.14"
+version = "0.8.15"
 dependencies = [
  "base64",
  "cbor-data-derive",
@@ -127,7 +127,7 @@ dependencies = [
 
 [[package]]
 name = "cbor-data-derive"
-version = "0.8.14"
+version = "0.8.15"
 dependencies = [
  "proc-macro2",
  "quote",
