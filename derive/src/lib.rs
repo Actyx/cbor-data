@@ -56,7 +56,7 @@ pub fn derive_read(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 write!(f, #name_string)
             }
 
-            fn read_cbor(cbor: &::cbor_data::Cbor) -> ::cbor_data::codec::Result<Self>
+            fn read_cbor_impl(cbor: &::cbor_data::Cbor) -> ::cbor_data::codec::Result<Self>
             where
                 Self: Sized,
             {

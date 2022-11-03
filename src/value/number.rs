@@ -122,6 +122,15 @@ impl<'a> Number<'a> {
             Float(e) => Float(e.make_static()),
         }
     }
+
+    pub fn get_type(&self) -> &'static str {
+        match self {
+            Int(_) => "small integer",
+            IEEE754(_) => "small float",
+            Decimal(_) => "big decimal",
+            Float(_) => "big float",
+        }
+    }
 }
 
 /// A representation of a bignum

@@ -36,7 +36,7 @@ fn named_struct() {
     assert_eq!(x, X::new("hello", 42));
     let x =
         X::read_cbor(Cbor::checked(&*b("a2 61 77 64 68 65 6c 6c 61 41 00")).unwrap()).unwrap_err();
-    assert_eq!(x, CodecError::MissingField("x"));
+    assert_eq!(x, CodecError::MissingField("x").with_ctx(|x| x.push('X')));
     let x =
         X::read_cbor(Cbor::checked(&*b("a3 61 78 64 68 65 6c 6c 61 79 18 2a 61 41 00")).unwrap())
             .unwrap();
@@ -61,6 +61,7 @@ fn tuple_struct() {
             expected: 2,
             found: 1
         }
+        .with_ctx(|x| x.push('X'))
     );
     let x = X::read_cbor(Cbor::checked(&*b("83 17 60 00")).unwrap()).unwrap();
     assert_eq!(x, X(23, String::new()));
@@ -94,7 +95,6 @@ fn single_struct() {
 #[test]
 fn enums() {
     #[derive(Debug, PartialEq, WriteCbor, ReadCbor)]
-    #[cbor(x)]
     enum X {
         Unit,
         One(u64),
@@ -126,4 +126,30 @@ fn enums() {
     let bytes = X::Rec { a: 5, b: 6 }.write_cbor(CborBuilder::default());
     assert_eq!(bytes.as_slice(), b("a1 63 52 65 63 a2 61 61 05 61 62 06"));
     assert_eq!(X::read_cbor(bytes.as_ref()).unwrap(), X::Rec { a: 5, b: 6 });
+}
+
+#[test]
+fn error() {
+    #[derive(Debug, PartialEq, WriteCbor, ReadCbor)]
+    #[cbor(transparent)]
+    struct X(Vec<u32>);
+
+    let bytes = X(vec![1, 2]).write_cbor(CborBuilder::default());
+    assert_eq!(bytes.as_slice(), b("82 01 02"));
+    assert_eq!(X::read_cbor(bytes.as_ref()).unwrap(), X(vec![1, 2]));
+
+    let err = X::read_cbor(Cbor::checked(&*b("82 21 02")).unwrap()).unwrap_err();
+    assert_eq!(err.to_string(), "error decoding u32 <- Vec<u32> <- X: codec error: out of range integral type conversion attempted");
+
+    let err = X::read_cbor(Cbor::checked(&*b("82 41 00 02")).unwrap()).unwrap_err();
+    assert_eq!(err.to_string(), "error decoding i128 <- u32 <- Vec<u32> <- X: type error when reading number: found byte string (tags: None)");
+
+    let err = X::read_cbor(Cbor::checked(&*b("82 c2 41 00 02")).unwrap()).unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "error decoding i128 <- u32 <- Vec<u32> <- X: wrong number format (found big decimal)"
+    );
+
+    let err = X::read_cbor(Cbor::checked(&*b("a1 01 02")).unwrap()).unwrap_err();
+    assert_eq!(err.to_string(), "error decoding Vec<u32> <- X: type error when reading array: found dictionary (tags: None)");
 }
