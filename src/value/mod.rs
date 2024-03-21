@@ -251,6 +251,16 @@ mod tests {
     }
 
     #[test]
+    fn test_bytes_lifetime() {
+        fn _check_compile<'a, 'err: 'a>(value: &'a CborValue<'err>) -> &'err [u8] {
+            match value.as_bytes().unwrap() {
+                std::borrow::Cow::Borrowed(b) => *b,
+                std::borrow::Cow::Owned(_) => todo!(),
+            }
+        }
+    }
+
+    #[test]
     fn display() {
         fn to_cbor_str(f: f64) -> String {
             format!("{}", CborBuilder::new().encode_f64(f))
