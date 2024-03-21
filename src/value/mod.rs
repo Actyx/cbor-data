@@ -143,7 +143,7 @@ impl<'a> CborValue<'a> {
         }
     }
 
-    pub fn as_str(&self) -> Option<&Cow<str>> {
+    pub fn as_str(&self) -> Option<&Cow<'a, str>> {
         if let Str(s) = self {
             Some(s)
         } else {
@@ -239,6 +239,16 @@ mod tests {
         value::{number::Exponential, Number, Timestamp},
         CborBuilder, CborOwned, CborValue, Encoder, Literal, Writer,
     };
+
+    #[test]
+    fn test_str_lifetime() {
+        fn _check_compile<'a, 'err: 'a>(value: &'a CborValue<'err>) -> &'err str {
+            match value.as_str().unwrap() {
+                std::borrow::Cow::Borrowed(b) => *b,
+                std::borrow::Cow::Owned(_) => todo!(),
+            }
+        }
+    }
 
     #[test]
     fn display() {
