@@ -19,6 +19,7 @@ fn skip_bytes(bytes: &[u8]) -> (Option<&[u8]>, &[u8]) {
             let (len, _, r) = integer(rest).unwrap();
             rest = &r[len as usize..];
         }
+        rest = &rest[1..];
         (None, rest)
     } else {
         let len = len as usize;

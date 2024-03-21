@@ -3,7 +3,7 @@ members = [".", "derive"]
 
 [package]
 name = "cbor-data"
-version = "0.8.16"
+version = "0.8.17"
 authors = ["Roland Kuhn <rk@rkuhn.info>"]
 edition = "2018"
 description = "A library for using CBOR as in-memory representation for working with dynamically shaped data"

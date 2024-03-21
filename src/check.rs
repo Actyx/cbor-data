@@ -180,9 +180,11 @@ pub fn validate(bytes: &[u8], permit_suffix: bool) -> Result<(&Cbor, &[u8]), Par
 mod tests {
     use super::validate;
     use crate::{
-        Cbor, CborOwned,
+        value::Number,
+        Cbor, CborBuilder, CborOwned, Encoder,
         ErrorKind::{self, *},
         WhileParsing::*,
+        Writer,
     };
 
     fn t(bytes: impl AsRef<[u8]>) -> (usize, ErrorKind) {
@@ -341,5 +343,20 @@ mod tests {
         let bytes = Cbor::checked(&[0xd8u8, 24, 0x5f, 0x41, 0x18, 0x41, 0x2a, 0xff]).unwrap();
         let canon = CborOwned::canonical(bytes.as_ref()).unwrap();
         assert_eq!(canon.as_slice(), &[0x18u8, 0x2a]);
+        let dict = CborBuilder::new().encode_dict(|b| {
+            b.with_key("key", |b| b.write_item(&*bytes));
+        });
+        let num = dict
+            .decode()
+            .as_dict()
+            .unwrap()
+            .get(&*CborBuilder::new().encode_str("key"))
+            .unwrap()
+            .decode()
+            .as_number()
+            .unwrap()
+            .clone()
+            .make_static();
+        assert_eq!(num, Number::Int(42));
     }
 }
