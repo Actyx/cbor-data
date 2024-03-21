@@ -159,7 +159,7 @@ impl<'a> CborValue<'a> {
         }
     }
 
-    pub fn as_bytes(&self) -> Option<&Cow<[u8]>> {
+    pub fn as_bytes(&self) -> Option<&Cow<'a, [u8]>> {
         if let Bytes(b) = self {
             Some(b)
         } else {
