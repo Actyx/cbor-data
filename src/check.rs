@@ -180,7 +180,7 @@ pub fn validate(bytes: &[u8], permit_suffix: bool) -> Result<(&Cbor, &[u8]), Par
 mod tests {
     use super::validate;
     use crate::{
-        CborOwned,
+        Cbor, CborOwned,
         ErrorKind::{self, *},
         WhileParsing::*,
     };
@@ -334,5 +334,12 @@ mod tests {
 
         assert_eq!(t([0xd8, 24, 0x41, 0x01, 2]), Ok(1));
         assert_eq!(t([0xd8, 24, 0x42, 0x01, 2]), Err((4, TrailingGarbage)));
+    }
+
+    #[test]
+    fn weird1() {
+        let bytes = Cbor::checked(&[0xd8u8, 24, 0x5f, 0x41, 0x18, 0x41, 0x2a, 0xff]).unwrap();
+        let canon = CborOwned::canonical(bytes.as_ref()).unwrap();
+        assert_eq!(canon.as_slice(), &[0x18u8, 0x2a]);
     }
 }
