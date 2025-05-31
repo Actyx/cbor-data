@@ -145,17 +145,20 @@ impl Timestamp {
 #[cfg(feature = "rfc3339")]
 mod rfc3339 {
     use super::Timestamp;
-    use chrono::{DateTime, FixedOffset, NaiveDateTime, Offset, TimeZone};
+    use chrono::{DateTime, FixedOffset, Offset, TimeZone, Utc};
     use std::convert::TryFrom;
 
     impl TryFrom<Timestamp> for DateTime<FixedOffset> {
         type Error = ();
 
         fn try_from(t: Timestamp) -> Result<Self, Self::Error> {
-            Ok(DateTime::<FixedOffset>::from_utc(
-                NaiveDateTime::from_timestamp_opt(t.unix_epoch(), t.nanos()).ok_or(())?,
-                FixedOffset::east(t.tz_sec_east()),
-            ))
+            Ok(FixedOffset::east_opt(t.tz_sec_east())
+                .ok_or(())?
+                .from_utc_datetime(
+                    &DateTime::<Utc>::from_timestamp(t.unix_epoch(), t.nanos())
+                        .ok_or(())?
+                        .naive_utc(),
+                ))
         }
     }
 

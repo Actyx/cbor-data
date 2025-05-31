@@ -3,7 +3,7 @@ members = [".", "derive"]
 
 [package]
 name = "cbor-data"
-version = "0.8.17"
+version = "0.8.18"
 authors = ["Roland Kuhn <rk@rkuhn.info>"]
 edition = "2018"
 description = "A library for using CBOR as in-memory representation for working with dynamically shaped data"
@@ -24,7 +24,7 @@ libipld14 = { package = "libipld", version = "0.14", default-features = false, f
   "dag-cbor",
 ], optional = true }
 smallvec = { version = "1.6.1", features = ["const_generics", "write"] }
-cbor-data-derive = { version = "=0.8.15", path = "derive", optional = true }
+cbor-data-derive = { version = "=0.8.18", path = "derive", optional = true }
 
 [dev-dependencies]
 criterion = "0.3"
@@ -34,6 +34,7 @@ rand = "0.8"
 serde = "1"
 serde_cbor = "0.11.1"
 serde_json = "1"
+cbor-data-derive = { version = "=0.8.18", path = "derive" }
 
 [lib]
 crate-type = ["rlib"]

@@ -1,7 +1,8 @@
 use cbor_data::{
-    codec::{CodecError, ReadCbor, WriteCbor},
+    codec::{self, ReadCbor as _, WriteCbor as _},
     Cbor, CborBuilder,
 };
+use cbor_data_derive::{ReadCbor, WriteCbor};
 
 fn b(mut s: &str) -> Vec<u8> {
     let mut ret = vec![];
@@ -36,7 +37,10 @@ fn named_struct() {
     assert_eq!(x, X::new("hello", 42));
     let x =
         X::read_cbor(Cbor::checked(&*b("a2 61 77 64 68 65 6c 6c 61 41 00")).unwrap()).unwrap_err();
-    assert_eq!(x, CodecError::MissingField("x").with_ctx(|x| x.push('X')));
+    assert_eq!(
+        x,
+        codec::CodecError::MissingField("x").with_ctx(|x| x.push('X'))
+    );
     let x =
         X::read_cbor(Cbor::checked(&*b("a3 61 78 64 68 65 6c 6c 61 79 18 2a 61 41 00")).unwrap())
             .unwrap();
@@ -57,7 +61,7 @@ fn tuple_struct() {
     let e = X::read_cbor(Cbor::checked(&*b("81 18 2a")).unwrap()).unwrap_err();
     assert_eq!(
         e,
-        CodecError::TupleSize {
+        codec::CodecError::TupleSize {
             expected: 2,
             found: 1
         }

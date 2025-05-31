@@ -70,7 +70,7 @@ pub fn code_read(data: Data, attrs: Vec<Attribute>) -> Result<TokenStream, Error
                     .collect::<::std::collections::BTreeMap<_, _>>();
                 #(#vars else)*
                 {
-                    Err(CodecError::NoKnownVariant {
+                    Err(::cbor_data::codec::CodecError::NoKnownVariant {
                         known: &[#(#known,)*][..],
                         present: d.into_keys().map(|c| c.into_owned()).collect(),
                     })
@@ -121,7 +121,7 @@ fn read_fields(f: &Fields, constructor: TokenStream) -> Result<TokenStream, Erro
             if cbor.decode().is_null() {
                 Ok(#constructor)
             } else {
-                Err(CodecError::type_error("null", &cbor.tagged_item()))
+                Err(::cbor_data::codec::CodecError::type_error("null", &cbor.tagged_item()))
             }
         }),
     }
