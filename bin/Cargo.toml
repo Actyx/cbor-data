@@ -11,5 +11,5 @@ repository = "https://github.com/Actyx/cbor-data"
 
 [dependencies]
 anyhow = "1.0.98"
-cbor-data = { path = ".." }
+cbor-data = { version = "0.8.18", path = ".." }
 clap = { version = "4.5.40", features = ["derive"] }
