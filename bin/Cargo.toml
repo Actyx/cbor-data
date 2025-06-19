@@ -1,0 +1,15 @@
+[package]
+name = "cbor-bin"
+version = "0.1.0"
+authors = ["Roland Kuhn <rk@rkuhn.info>"]
+edition = "2024"
+description = "A command line tool for working with CBOR"
+license = "MIT OR Apache-2.0"
+documentation = "https://docs.rs/cbor-bin"
+homepage = "https://crates.io/crates/cbor-bin"
+repository = "https://github.com/Actyx/cbor-data"
+
+[dependencies]
+anyhow = "1.0.98"
+cbor-data = { path = ".." }
+clap = { version = "4.5.40", features = ["derive"] }

@@ -74,8 +74,8 @@ pub trait Visitor<'a, Err> {
         Ok(())
     }
     /// Visit the beginning of an array. `size` is None for indefinite size encoding.
-    /// Return `false` to skip this array entirely, meaning that `visit_array_index`
-    /// and `visit_array_end` will NOT be called for it.
+    /// Return `false` to skip this array, meaning that `visit_array_index`
+    /// will NOT be called for it.
     fn visit_array_begin(&mut self, array: TaggedItem<'a>, size: Option<u64>) -> Result<bool, Err> {
         Ok(true)
     }
@@ -90,8 +90,8 @@ pub trait Visitor<'a, Err> {
         Ok(())
     }
     /// Visit the beginning of an dict. `size` is None for indefinite size encoding.
-    /// Return `false` to skip this dict entirely, meaning that `visit_dict_key`
-    /// and `visit_dict_end` will NOT be called for it.
+    /// Return `false` to skip this dict, meaning that `visit_dict_key`
+    /// will NOT be called for it.
     fn visit_dict_begin(&mut self, dict: TaggedItem<'a>, size: Option<u64>) -> Result<bool, Err> {
         Ok(true)
     }
