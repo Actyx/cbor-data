@@ -210,7 +210,8 @@ impl<'a> Visitor<'a, std::fmt::Error> for &mut std::fmt::Formatter<'_> {
         if !is_first {
             write!(self, ", ")?;
         }
-        write!(self, "{}: ", key)?;
+        visit(self, key)?;
+        write!(self, ": ")?;
         Ok(true)
     }
 

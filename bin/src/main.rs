@@ -10,6 +10,7 @@ use std::{
 mod brief_display;
 
 #[derive(Parser, Debug)]
+#[command(version)]
 struct Args {
     /// Input file to process; use "-" for stdin
     #[clap(short, long, default_value = "-")]

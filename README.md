@@ -42,20 +42,21 @@ let cbor = CborBuilder::new().encode_dict(|builder| {
 use cbor_data::{PathElement, index_str, CborValue, value::Timestamp};
 use std::borrow::Cow::{self, Borrowed};
 
-let item = cbor.index(index_str("name")).unwrap();
+let item = cbor.index(index_str("name")).expect("indexing .name");
 assert_eq!(item.decode(), CborValue::Str(Borrowed("Actyx")));
 
 // decoding references source bytes where possible, use make_static() to break ties
 let decoded =
-    cbor.index([PathElement::String(Borrowed("founded"))]).unwrap().decode().make_static();
+    cbor.index([PathElement::String(Borrowed("founded"))])
+        .expect("indexing .founded").decode().make_static();
 
 // if you know what you’re looking for, you can use the as_* or to_* methods:
-let ts = decoded.as_timestamp().unwrap();
+let ts = decoded.as_timestamp().expect("timestamp");
 assert_eq!(ts.unix_epoch(), 1_455_192_000);
 assert_eq!(ts.nanos(), 0);
 assert_eq!(ts.tz_sec_east(), 3600);
 
-let item = cbor.index(index_str("founders[1]")).unwrap();
+let item = cbor.index(index_str("founders[1]")).expect("indexing .founders[1]");
 let name = item.decode().to_str();
 // to_str() returns an Option<Cow<str>> to allow you to avoid allocations
 // (i.e. this still takes the string’s bytes from `&cbor` in this case)
@@ -64,7 +65,7 @@ assert_eq!(name.as_ref().map(Cow::as_ref), Some("Maximilian Fischer"));
 // access low-level encoding
 use cbor_data::ItemKind;
 
-let item = cbor.index(index_str("founded")).unwrap();
+let item = cbor.index(index_str("founded")).expect("indexing .founded");
 assert_eq!(item.tags().collect::<Vec<_>>(), [TAG_ISO8601]);
 assert!(matches!(item.kind(), ItemKind::Str(s) if s == "2016-02-11T13:00:00+01:00"));
 ```
