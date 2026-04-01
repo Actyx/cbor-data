@@ -112,7 +112,7 @@ pub(crate) fn float(bytes: &[u8]) -> Option<(f64, &[u8], &[u8])> {
     })
 }
 
-pub(crate) fn tags(bytes: &[u8]) -> Option<(Tags, &[u8])> {
+pub(crate) fn tags(bytes: &[u8]) -> Option<(Tags<'_>, &'_ [u8])> {
     let mut remaining = bytes;
     while let Some(value) = remaining.get(0) {
         if (*value >> 5) != MAJOR_TAG {

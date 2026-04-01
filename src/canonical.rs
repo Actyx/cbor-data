@@ -21,7 +21,10 @@ pub fn canonicalise<W: Writer>(bytes: &[u8], builder: W) -> Result<W::Output, Pa
     }
 }
 
-fn canonical<W: Writer>(bytes: &[u8], builder: W) -> Result<(&[u8], W::Output), InternalError> {
+fn canonical<W: Writer>(
+    bytes: &[u8],
+    builder: W,
+) -> Result<(&'_ [u8], W::Output), InternalError<'_>> {
     let (tags, bytes) = tags(bytes).ok_or_else(|| InternalError::new(bytes, InvalidInfo))?;
     match major(bytes).ok_or_else(|| InternalError::new(bytes, UnexpectedEof(ItemHeader)))? {
         MAJOR_POS => integer(bytes)

@@ -27,7 +27,7 @@ impl<T> MkErr for Option<T> {
     }
 }
 
-fn frag_err(position: &[u8], is_string: bool) -> InternalError {
+fn frag_err(position: &[u8], is_string: bool) -> InternalError<'_> {
     let w = if is_string {
         StringFragment
     } else {
@@ -40,7 +40,7 @@ pub(crate) fn value_bytes(
     bytes: &[u8],
     get_bytes: bool,
     check_str: bool,
-) -> Result<(Cow<[u8]>, &[u8]), InternalError> {
+) -> Result<(Cow<'_, [u8]>, &'_ [u8]), InternalError<'_>> {
     let m = major(bytes).unwrap();
     let (len, _, mut rest) = integer(bytes)
         .or_else(|| indefinite(bytes))
@@ -83,7 +83,7 @@ pub(crate) fn value_bytes(
 }
 
 pub fn validate(bytes: &[u8], permit_suffix: bool) -> Result<(&Cbor, &[u8]), ParseError> {
-    fn rec(bytes: &[u8], tag: Option<u64>) -> Result<(&Cbor, &[u8]), InternalError> {
+    fn rec(bytes: &[u8], tag: Option<u64>) -> Result<(&'_ Cbor, &'_ [u8]), InternalError<'_>> {
         let m = major(bytes).ok_or_else(|| InternalError::new(bytes, UnexpectedEof(ItemHeader)))?;
         match m {
             MAJOR_POS | MAJOR_NEG | MAJOR_LIT => integer(bytes)

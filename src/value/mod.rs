@@ -119,7 +119,7 @@ impl<'a> CborValue<'a> {
         }
     }
 
-    pub fn as_number(&self) -> Option<&Number> {
+    pub fn as_number(&self) -> Option<&Number<'_>> {
         if let Number(n) = self {
             Some(n)
         } else {

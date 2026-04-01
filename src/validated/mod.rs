@@ -84,7 +84,7 @@ fn bytes_iter(bytes: &[u8]) -> BytesIter<'_> {
     }
 }
 
-fn item(bytes: &[u8]) -> ItemKind {
+fn item(bytes: &[u8]) -> ItemKind<'_> {
     use ItemKind::*;
 
     match major(bytes).unwrap() {
@@ -117,7 +117,7 @@ fn item(bytes: &[u8]) -> ItemKind {
     }
 }
 
-pub fn tagged_item(bytes: &[u8]) -> (Tags, ItemKind) {
+pub fn tagged_item(bytes: &[u8]) -> (Tags<'_>, ItemKind<'_>) {
     let (tags, rest) = tags(bytes).unwrap();
     let kind = item(rest);
     (tags, kind)

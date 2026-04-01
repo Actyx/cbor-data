@@ -225,7 +225,7 @@ impl Cbor {
     }
 
     /// More efficient shortcut for `.decode().to_number()` with error reporting.
-    pub fn try_number(&self) -> Result<value::Number, TypeError> {
+    pub fn try_number(&self) -> Result<value::Number<'_>, TypeError> {
         let item = self.tagged_item();
         CborValue::new(item).to_number().ok_or(TypeError {
             target: "number",
@@ -245,7 +245,7 @@ impl Cbor {
     }
 
     /// More efficient shortcut for `.decode().to_bytes()` with error reporting.
-    pub fn try_bytes(&self) -> Result<Cow<[u8]>, TypeError> {
+    pub fn try_bytes(&self) -> Result<Cow<'_, [u8]>, TypeError> {
         let item = self.tagged_item();
         CborValue::new(item).to_bytes().ok_or(TypeError {
             target: "byte string",
@@ -255,7 +255,7 @@ impl Cbor {
     }
 
     /// More efficient shortcut for `.decode().to_str()` with error reporting.
-    pub fn try_str(&self) -> Result<Cow<str>, TypeError> {
+    pub fn try_str(&self) -> Result<Cow<'_, str>, TypeError> {
         let item = self.tagged_item();
         CborValue::new(item).to_str().ok_or(TypeError {
             target: "string",
@@ -265,7 +265,7 @@ impl Cbor {
     }
 
     /// More efficient shortcut for `.decode().to_array()` with error reporting.
-    pub fn try_array(&self) -> Result<Vec<Cow<Cbor>>, TypeError> {
+    pub fn try_array(&self) -> Result<Vec<Cow<'_, Cbor>>, TypeError> {
         let item = self.tagged_item();
         CborValue::new(item).to_array().ok_or(TypeError {
             target: "array",
@@ -275,7 +275,7 @@ impl Cbor {
     }
 
     /// More efficient shortcut for `.decode().to_dict()` with error reporting.
-    pub fn try_dict(&self) -> Result<BTreeMap<Cow<Cbor>, Cow<Cbor>>, TypeError> {
+    pub fn try_dict(&self) -> Result<BTreeMap<Cow<'_, Cbor>, Cow<'_, Cbor>>, TypeError> {
         let item = self.tagged_item();
         CborValue::new(item).to_dict().ok_or(TypeError {
             target: "dictionary",

@@ -19,7 +19,7 @@ impl<'a> ArrayWriter<'a> {
             max_definite,
         }
     }
-    fn non_tracking(&mut self, max_definite: Option<u64>) -> ArrayWriter {
+    fn non_tracking(&mut self, max_definite: Option<u64>) -> ArrayWriter<'_> {
         ArrayWriter {
             bytes: self.bytes.copy(),
             count: 0,

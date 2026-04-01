@@ -6,7 +6,7 @@ pub enum Bytes<'a> {
 }
 
 impl<'a> Bytes<'a> {
-    pub fn copy(&mut self) -> Bytes {
+    pub fn copy(&mut self) -> Bytes<'_> {
         Bytes::Borrowed(self.as_mut())
     }
 
